@@ -88,10 +88,8 @@ def update(policy, opt, obs_list, act_list, G):
     logp = Categorical(logits=policy(X)).log_prob(Acts)              # (T,)
     loss = -(logp * G).sum()
 
-    opt.zero_grad()
-    loss.backward()
+    opt.zero_grad(); loss.backward(); opt.step()
     grad_norm = torch.norm(torch.stack([p.grad.norm() for p in policy.parameters()])).item()
-    opt.step()
     return loss.item(), grad_norm
 
 def update_VPG(policy, opt, V, opt_V, obs_list, act_list, G, N_batch=1, n_v_iters=1):
@@ -102,10 +100,9 @@ def update_VPG(policy, opt, V, opt_V, obs_list, act_list, G, N_batch=1, n_v_iter
 
     values = V(X).squeeze(-1)  # (T,)
     adv = (G - values).detach()  # (T,) - note it does not carry gradients!!
-    adv = adv - adv.mean()
+    adv = adv - adv.mean() # benign step but good to do
 
-    # EV and adv use the PRE-update V: fitting V on this batch's G first and then
-    # using it as the baseline for the same batch would bias the policy gradient.
+    # EV and adv use the PRE-update V
     EV = 1 - adv.var() / (G.var() + 1e-8)
 
     loss = -(logp * adv).sum() / N_batch; opt.zero_grad(); loss.backward()
