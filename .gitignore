@@ -1,3 +1,7 @@
 .DS_Store
 __pycache__/
 ~$*
+notes/*.aux
+notes/*.log
+notes/*.out
+notes/*.toc

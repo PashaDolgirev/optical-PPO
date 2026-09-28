@@ -1,0 +1,6 @@
+torch>=2.0
+gymnasium>=0.29
+numpy
+matplotlib
+# optional -- only for tests/test_lle_vs_jax.py (cross-check against rc-chaotic-comb):
+# jax
