@@ -79,8 +79,7 @@ weights: its Kerr mixing supplies the second-order features the tasks need (for 
 product θ̇·g(θ) — see [`results/ppo/Pendulum/policy_map.png`](results/ppo/Pendulum/policy_map.png)).
 The chaotic ring learns the same structure, more slowly and noisily. An explicit quadratic feature map
 does as well as the ring on every task, so no *representational* advantage is claimed — the ring is a
-physical implementation of such a map, and the open question is where hardware could win
-([Scope](#scope-and-outlook)).
+physical implementation of such a map.
 
 ## The ring model
 
