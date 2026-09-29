@@ -7,6 +7,7 @@ Claude outputs/
 nn_baselines/
 run_experiments.sh
 summarize_results.py
+evaluate_readout.py
 results/ppo/*/checkpoints/
 results/ppo/*/logs/
 results/characterization/*_cache.npz
