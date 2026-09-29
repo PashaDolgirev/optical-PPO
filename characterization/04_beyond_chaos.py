@@ -66,8 +66,8 @@ if not REPLOT:
             a, _ = sol.evolve(a, int(2.0 / sol.dt))
             t_grid.append(2.0 * (k + 1)); err.append(((a - a_star).abs().pow(2).sum().sqrt() / a_star.abs().pow(2).sum().sqrt()).item())
         res[f"b_{name}"] = np.array([t_grid, err])
-        res[f"b_rate_{name}"] = ring.prepared_growth_rate
-        print(f"(b) {name}: slowest relaxation rate {ring.prepared_growth_rate:+.4f}, |a - a*| after t = 10 / 40 / 120: "
+        res[f"b_rate_{name}"] = float(sol.growth_rate(a_star)[0])                     # rate AT a*: governs the late-time decay
+        print(f"(b) {name}: slowest relaxation rate at a* {res[f'b_rate_{name}']:+.4f}, |a - a*| after t = 10 / 40 / 120: "
               f"{err[4]:.1e} / {err[19]:.1e} / {err[59]:.1e}", flush=True)
 
     # ---------------------------------------------------------------- (c) stability of the followed branch vs eps
