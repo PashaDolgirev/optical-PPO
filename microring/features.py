@@ -129,9 +129,7 @@ class StaticRingFeatureMap(_RingBase):
     Non-chaotic ring: the feature is the STATIONARY state selected by the current drive.
 
     The stationary state is found by Newton continuation from the ring's previous state
-    (LLESolver.steady_state) instead of by time stepping. That is the limit a physical ring works
-    in -- one 50 Hz control frame is ~10^6 photon lifetimes -- and it is both exact and much cheaper
-    than integrating through the slow relaxation of soft pattern modes. Continuation follows ONE
+    (LLESolver.steady_state) instead of by time stepping. Continuation follows ONE
     branch; whether the real ring would stay on it is a separate question answered by
     `unstable_fraction()` (Jacobian spectrum) and by the time-stepping checks in characterization/04.
 

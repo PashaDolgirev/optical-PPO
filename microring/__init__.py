@@ -8,15 +8,12 @@ from .features import ChaoticRingFeatureMap, StaticRingFeatureMap, MicroringFeat
 #
 #  chaos   : anomalous dispersion, pump well above the MI threshold. Ergodic => the time-averaged
 #            spectrum is a single-valued function of the drive, at the price of chaos noise.
-#            Delta = 1.76 as in rc-chaotic-comb; F0^2 = 10 -> Lyapunov ~ +0.55 (characterization/01).
-#            d2 = 0.0125 keeps the comb inside N = 128 modes (the original d2 = 3.47e-3 needs N = 256;
-#            the LLE only knows d2 * m^2, so this is the same ring with the mode index rescaled x1.9).
 #  normal  : normal dispersion, monostable detuning: no modulational instability, no patterns. One
 #            stable stationary state for every drive, relaxation rate ~ 1, zero noise.
 #  rolls   : Turing rolls just above the MI threshold. Need two-sided tones to be stationary; soft
-#            phase mode and coexisting roll numbers => only weak tones (characterization/04).
+#            phase mode and coexisting roll numbers => only weak tones.
 #  soliton : one dissipative Kerr soliton parked at phi = pi by two-sided tones. Tolerates only very
-#            weak tones before it breathes or extra solitons nucleate (characterization/04): at eps = 0.05
+#            weak tones before it breathes or extra solitons nucleate: at eps = 0.05
 #            the branch is lost in a few % of the decisions along CartPole trajectories and PPO does not
 #            learn; at eps = 0.02 it never is, and the (linear) transducer solves CartPole.
 # ---------------------------------------------------------------------------------------------
@@ -30,7 +27,7 @@ REGIMES = {
     "soliton": dict(kind="static", N=128, dt=0.01, Delta=3.0, d2=0.0125, F0=float(np.sqrt(3.0)), eps=0.02,
                     two_sided=True, init="soliton", soliton_centre=float(np.pi), T_prep=150.0),
 }
-OPERATING_POINT = {k: REGIMES["chaos"][k] for k in ("N", "dt", "Delta", "d2", "F0")}      # used by characterization/01-03
+OPERATING_POINT = {k: REGIMES["chaos"][k] for k in ("N", "dt", "Delta", "d2", "F0")}
 
 
 def make_ring(regime, n_envs, obs_scale, seed=0, **overrides):

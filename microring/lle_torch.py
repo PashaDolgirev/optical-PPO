@@ -1,16 +1,13 @@
 """
 Batched Lugiato-Lefever equation (LLE) solver in PyTorch, with sub-band drives.
 
-PyTorch port of `rc-chaotic-comb/MR_solver/lle_solver.py` (JAX), extended from a
-single pump tone to a multi-tone drive. Same dimensionless LLE:
-
     d psi/dt = -(1 + i Delta) psi + i d2 d^2psi/dphi^2 + i |psi|^2 psi + F(phi),   phi in [0, 2pi)
 
     F(phi) = F0 + sum_j f_j exp(i m_j phi)
 
 F0 is the main pump on the m = 0 resonance; f_j are the (weaker) "sub-band" drives
-injected into modes m_j (e.g. m = 1, 2, 3, 4). Time is in units of 2/kappa (the
-field decays as exp(-t)), d2 > 0 is anomalous dispersion.
+injected into modes m_j. Time is in units of 2/kappa (the field decays as exp(-t)),
+d2 > 0 is anomalous dispersion.
 
 State convention
 ----------------
@@ -18,9 +15,8 @@ The state is the vector of comb-line amplitudes a_m, with
 
     psi(phi) = sum_m a_m exp(i m phi)        <=>       a = fft(psi) / N .
 
-|a_m|^2 is the power in comb line m -- the quantity an optical spectrum analyser
-integrates. (In rc-chaotic-comb this is `|psi_hat_m|^2 / N^2`.) The mode axis uses
-the FFT ordering m = 0, 1, ..., N/2-1, -N/2, ..., -1; see `LLESolver.modes`.
+|a_m|^2 is the power in comb line m -- what an optical spectrum analyser integrates.
+The mode axis uses the FFT ordering m = 0, 1, ..., N/2-1, -N/2, ..., -1.
 
 Integrator
 ----------
@@ -31,20 +27,15 @@ Strang splitting  L(dt/2) -> N(dt) -> L(dt/2), where BOTH sub-flows are exact:
   * Kerr, point by point in phi:    dpsi/dt = i |psi|^2 psi   (|psi| is conserved)
         psi(t+h) = psi * exp(i |psi|^2 h)
 
-so the only error is the O(dt^2) splitting error. Because the drive lives in the
-linear sub-flow, a multi-tone drive costs nothing extra: F_m is just a constant
-added to a handful of modes. Consecutive half linear steps are fused into one
-full step inside the loop.
+so the only error is the O(dt^2) splitting error. Consecutive half linear steps are
+fused into one full step inside the loop. scheme="rk4" is a second splitting (drive
+in the nonlinear sub-step, integrated by RK4), kept only for the cross-check against
+the original JAX implementation in tests/test_lle_vs_jax.py.
 
-`scheme="rk4"` reproduces the JAX integrator bit-for-bit in structure (drive in
-the nonlinear sub-step, RK4) and exists only to cross-validate against it
-(tests/test_lle_vs_jax.py). Both are second-order Strang schemes.
-
-Everything is batched over a leading dimension B: B independent resonators
-(different drives and/or different chaotic trajectories) advance in lock-step.
+Everything is batched over a leading dimension B: B independent resonators advance
+in lock-step.
 """
 
-import math
 import numpy as np
 import torch
 
@@ -177,17 +168,16 @@ class LLESolver:
 
     # ------------------------------------------------------- stationary states (non-chaotic regimes)
     # In the roll / soliton regimes the ring settles to a fixed point of the driven LLE, but slowly
-    # (soft pattern-position and near-threshold amplitude modes relax over tens of lifetimes). A
-    # physical ring has all the time it wants -- one 50 Hz control step is ~10^6 lifetimes -- so the
-    # faithful (and ~10x cheaper) simulation of that limit is to solve G(psi) = 0 directly by Newton
+    # (soft pattern modes relax over tens of lifetimes), while a physical ring has all the time it
+    # wants: one 50 Hz control step is ~10^6 lifetimes. So solve G(psi) = 0 directly by Newton
     # iteration, warm-started from the previous state so that the SAME branch is followed.
     #
     #   G(psi) = -(1 + i Delta) psi + i d2 psi'' + i |psi|^2 psi + F(phi)
     #
     # On (x, y) = (Re psi, Im psi) at the N grid points the Jacobian is the real 2N x 2N matrix
     #   J = [[Mr - S, -Mi - 2A + C], [Mi + 2A + C, Mr + S]],   A = |psi|^2,  C + iS = psi^2,
-    # with Mr + i Mi the (dense, spectral) matrix of the linear operator. Its eigenvalues are also
-    # the growth rates of perturbations: max Re < 0 <=> the stationary state is stable.
+    # with Mr + i Mi the (dense, spectral) matrix of the linear operator. Its eigenvalues are the
+    # growth rates of perturbations: max Re < 0 <=> stable.
     def _linear_matrix(self):
         if not hasattr(self, "_M"):
             Lm = -(1.0 + 1j * self.Delta) - 1j * self.d2 * self.modes.double().numpy() ** 2
