@@ -1,0 +1,5 @@
+LunarLander-v3 | policy = mr (normal, intensity): 33 features, 136 trainable policy parameters
+Update   1/250: return     nan (  0 eps) | EV -0.01 | kl 0.0156 | off_frac 0.29 | H 1.37 |      5s
+Update   5/250: return   -85.4 ( 12 eps) | EV +0.63 | kl 0.0154 | off_frac 0.24 | H 1.21 |     48s
+Update   9/250: return   -24.6 (  6 eps) | EV +0.75 | kl 0.0084 | off_frac 0.09 | H 1.01 |     89s
+Update  13/250: return   -34.3 (  2 eps) | EV +0.86 | kl 0.0099 | off_frac 0.13 | H 1.01 |    128s

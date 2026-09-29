@@ -1,0 +1,43 @@
+policy = mr: 17 features, 36 trainable policy parameters
+Update   1/40: return   17.2 ( 67 eps) | EV +0.01 | kl 0.0110 | off_frac 0.14 | H 0.68 |     64s
+Update   2/40: return   24.3 ( 67 eps) | EV -0.30 | kl 0.0118 | off_frac 0.16 | H 0.65 |    128s
+Update   3/40: return   31.4 ( 48 eps) | EV -0.07 | kl 0.0110 | off_frac 0.12 | H 0.62 |    191s
+Update   4/40: return   50.8 ( 28 eps) | EV +0.10 | kl 0.0075 | off_frac 0.08 | H 0.58 |    254s
+Update   5/40: return   61.9 ( 12 eps) | EV +0.19 | kl 0.0057 | off_frac 0.07 | H 0.56 |    317s
+Update   6/40: return   71.0 ( 11 eps) | EV +0.32 | kl 0.0111 | off_frac 0.15 | H 0.53 |    380s
+Update   7/40: return  138.3 (  3 eps) | EV +0.23 | kl 0.0049 | off_frac 0.06 | H 0.50 |    445s
+Update   8/40: return  143.9 ( 15 eps) | EV +0.44 | kl 0.0054 | off_frac 0.06 | H 0.49 |    522s
+Update   9/40: return  147.0 ( 12 eps) | EV +0.76 | kl 0.0117 | off_frac 0.17 | H 0.48 |    599s
+Update  10/40: return  170.9 ( 11 eps) | EV +0.92 | kl 0.0139 | off_frac 0.20 | H 0.47 |    662s
+Update  11/40: return  209.0 (  6 eps) | EV +0.92 | kl 0.0109 | off_frac 0.16 | H 0.47 |    725s
+Update  12/40: return  169.1 ( 14 eps) | EV +0.89 | kl 0.0105 | off_frac 0.13 | H 0.46 |    788s
+Update  13/40: return  184.0 ( 16 eps) | EV +0.94 | kl 0.0031 | off_frac 0.03 | H 0.47 |    853s
+Update  14/40: return  160.6 ( 20 eps) | EV +0.91 | kl 0.0045 | off_frac 0.06 | H 0.48 |    917s
+Update  15/40: return  167.7 ( 17 eps) | EV +0.90 | kl 0.0092 | off_frac 0.12 | H 0.45 |    981s
+Update  16/40: return  173.4 (  7 eps) | EV +0.98 | kl 0.0123 | off_frac 0.17 | H 0.44 |   1045s
+Update  17/40: return  179.0 (  7 eps) | EV +0.98 | kl 0.0159 | off_frac 0.26 | H 0.44 |   1108s
+Update  18/40: return  170.0 ( 12 eps) | EV +0.97 | kl 0.0170 | off_frac 0.26 | H 0.44 |   1171s
+Update  19/40: return  159.3 (  6 eps) | EV +0.95 | kl 0.0187 | off_frac 0.26 | H 0.43 |   1235s
+Update  20/40: return  202.4 ( 10 eps) | EV +0.83 | kl 0.0036 | off_frac 0.04 | H 0.43 |   1300s
+Update  21/40: return  170.7 ( 22 eps) | EV +0.86 | kl 0.0053 | off_frac 0.08 | H 0.43 |   1364s
+Update  22/40: return  158.1 ( 17 eps) | EV +0.94 | kl 0.0049 | off_frac 0.07 | H 0.42 |   1428s
+Update  23/40: return  172.7 ( 13 eps) | EV +0.92 | kl 0.0047 | off_frac 0.06 | H 0.41 |   1494s
+Update  24/40: return  119.5 ( 17 eps) | EV +0.96 | kl 0.0055 | off_frac 0.08 | H 0.41 |   1557s
+Update  25/40: return  130.9 ( 21 eps) | EV +0.94 | kl 0.0051 | off_frac 0.07 | H 0.40 |   1621s
+Update  26/40: return  126.6 ( 14 eps) | EV +0.96 | kl 0.0032 | off_frac 0.04 | H 0.40 |   1684s
+Update  27/40: return  140.0 ( 14 eps) | EV +0.98 | kl 0.0097 | off_frac 0.12 | H 0.39 |   1747s
+Update  28/40: return  128.5 ( 11 eps) | EV +0.99 | kl 0.0070 | off_frac 0.10 | H 0.37 |   1810s
+Update  29/40: return  133.7 ( 15 eps) | EV +0.99 | kl 0.0107 | off_frac 0.13 | H 0.38 |   1873s
+Update  30/40: return  172.9 ( 15 eps) | EV +0.99 | kl 0.0119 | off_frac 0.15 | H 0.40 |   1936s
+Update  31/40: return  149.9 ( 10 eps) | EV +0.99 | kl 0.0070 | off_frac 0.11 | H 0.39 |   2009s
+Update  32/40: return  153.8 (  6 eps) | EV +0.99 | kl 0.0041 | off_frac 0.06 | H 0.40 |   2105s
+Update  33/40: return  175.7 ( 10 eps) | EV +0.99 | kl 0.0078 | off_frac 0.10 | H 0.41 |   2197s
+Update  34/40: return  175.9 (  9 eps) | EV +0.96 | kl 0.0057 | off_frac 0.06 | H 0.39 |   2265s
+Update  35/40: return  192.2 ( 12 eps) | EV +0.98 | kl 0.0087 | off_frac 0.11 | H 0.42 |   2329s
+Update  36/40: return  207.2 (  4 eps) | EV +0.97 | kl 0.0073 | off_frac 0.10 | H 0.41 |   2393s
+Update  37/40: return  245.7 (  7 eps) | EV +0.99 | kl 0.0077 | off_frac 0.12 | H 0.41 |   2461s
+Update  38/40: return  255.0 (  2 eps) | EV +0.99 | kl 0.0085 | off_frac 0.10 | H 0.39 |   2559s
+Update  39/40: return  265.9 (  7 eps) | EV +0.98 | kl 0.0046 | off_frac 0.06 | H 0.38 |   2657s
+Update  40/40: return  283.6 (  5 eps) | EV +0.98 | kl 0.0045 | off_frac 0.05 | H 0.37 |   2757s
+greedy evaluation over 64 episodes: 322.1 +- 60.7 (min 221, 3% reach 500)
+saved results/ppo/mr_Tavg100_seed0.json  (4256s)

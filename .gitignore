@@ -4,10 +4,8 @@ __pycache__/
 
 notes/
 Claude outputs/
-results/
 nn_baselines/
 run_experiments.sh
 summarize_results.py
-compare_policies.py
-evaluate_readout.py
+results/ppo/*/checkpoints/
 tests/regimes.png
