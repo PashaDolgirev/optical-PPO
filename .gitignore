@@ -5,7 +5,6 @@ __pycache__/
 notes/
 Claude outputs/
 nn_baselines/
-summarize_results.py
 evaluate_readout.py
 results/ppo/*/checkpoints/
 results/ppo/*/logs/
