@@ -6,9 +6,9 @@ PPO with the policy network replaced by a microring resonator.
 
 Only that last Linear layer is trained; the critic is the same MLP on the raw observation as before.
 
-The algorithm is the one in nn_baselines/PPO_CartPole.py (clipped ratio, GAE, fixed-horizon buffer
-with bootstrapping, frozen per-buffer targets, critic fitted first, full-batch epochs). Two changes
-are forced by the optics:
+The algorithm is standard PPO (clipped ratio, GAE, fixed-horizon buffer with bootstrapping,
+frozen per-buffer targets, critic fitted first, full-batch epochs). Two changes are forced
+by the optics:
 
   1. n_envs environments run in parallel, each wired to its own ring: simulating the ring is what
      costs time, and 64 rings in one batch cost barely more than one.

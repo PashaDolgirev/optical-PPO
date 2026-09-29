@@ -5,4 +5,5 @@ __pycache__/
 notes/
 Claude outputs/
 results/
+nn_baselines/
 tests/regimes.png
