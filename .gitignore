@@ -8,4 +8,6 @@ nn_baselines/
 run_experiments.sh
 summarize_results.py
 results/ppo/*/checkpoints/
+results/ppo/*/logs/
+results/characterization/*_cache.npz
 tests/regimes.png
