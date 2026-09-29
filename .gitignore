@@ -6,4 +6,6 @@ notes/
 Claude outputs/
 results/
 nn_baselines/
+run_experiments.sh
+summarize_results.py
 tests/regimes.png
