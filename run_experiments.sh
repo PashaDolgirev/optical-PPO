@@ -47,6 +47,7 @@ pendulum)
     wait; $PY compare_policies.py --env Pendulum ;;
 lunar)
     ( for s in 0 1 2; do run LunarLander mr_normal_seed$s --policy mr --regime normal --seed $s --n_updates 250; done ) &
-    ( for p in nn linear poly2; do for s in 0 1 2; do run LunarLander ${p}_seed$s --policy $p --seed $s; done; done ) &
+    ( run LunarLander mr_chaos_seed0 --policy mr --regime chaos --seed 0 --eps 1.0 --n_updates 250
+      for p in nn linear poly2; do for s in 0 1 2; do run LunarLander ${p}_seed$s --policy $p --seed $s; done; done ) &
     wait; $PY compare_policies.py --env LunarLander ;;
 esac
