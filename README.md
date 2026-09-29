@@ -28,6 +28,8 @@ simulations settle which of the ring's dynamical states — chaos, Turing rolls,
 all — is a usable feature map for a memoryless controller. An existence proof and a design guide, not a
 claim of optical advantage.
 
+A three-page write-up of the same story, in paper form: [`Optical_AI.pdf`](Optical_AI.pdf).
+
 ## Results
 
 Frozen final policies, greedy actions, 64 fresh episodes per seed (entries are per-seed values).
