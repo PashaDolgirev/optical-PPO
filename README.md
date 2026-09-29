@@ -85,7 +85,7 @@ physical implementation of such a map.
 
 Dimensionless LLE with a multi-tone drive, time in units of the photon lifetime 2/κ:
 
-$$\partial_t\psi = -(1+i\Delta)\psi + i d_2\,\partial_\varphi^2\psi + i|\psi|^2\psi + F_0 + \sum_{j} f_j\, e^{i m_j\varphi},\qquad \psi=\sum_m a_m e^{im\varphi}.$$
+$$\partial_t\psi = -(1+i\Delta)\psi + i d_2\,\partial_\varphi^2\psi + i|\psi|^2\psi + F_0 + \sum_{j} f_j e^{i m_j\varphi},\qquad \psi=\sum_m a_m e^{im\varphi}.$$
 
 Here Δ is the detuning, d2 the dispersion, F0 the pump, and |a_m|² is the power in comb line m — what
 a spectrometer measures. The simulator (`microring/lle_torch.py`) is a PyTorch analogue of the JAX solver
