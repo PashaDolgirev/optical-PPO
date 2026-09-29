@@ -4,24 +4,19 @@ PPO with the policy network replaced by a microring resonator.
     obs s --squash(s/scale)--> sub-band drives on modes 1..d --> Kerr ring (LLE) --> detected comb lines
           --> Linear(n_lines, n_actions) --> logits
 
-Only that last Linear layer is trained; the critic is the same MLP on the raw observation as before.
+Only that last Linear layer is trained; the critic is an MLP on the raw observation.
 
-The algorithm is standard PPO (clipped ratio, GAE, fixed-horizon buffer with bootstrapping,
-frozen per-buffer targets, critic fitted first, full-batch epochs). Two changes are forced
-by the optics:
-
-  1. n_envs environments run in parallel, each wired to its own ring: simulating the ring is what
-     costs time, and 64 rings in one batch cost barely more than one.
-  2. The buffer stores the FEATURES the ring produced when the action was taken, and every later
-     policy evaluation (logp_old, the epochs) reuses them. A chaotic ring asked again about the same
-     obs answers with a different S; treating S_t as the policy's (noisy) observation keeps PPO
-     exact -- pi(a | S_t) is what acted and what gets updated.
+The training loop is standard PPO (clipped ratio, GAE, frozen per-buffer targets, critic fitted
+first, full-batch epochs); the n_envs environments run in parallel, one per lane of a single
+batched ring. One point is specific to the optics: the buffer stores the features the ring
+produced when the action was taken, and all later policy evaluations reuse them -- the ring is
+never queried twice, since a chaotic ring would answer differently each time.
 
 --policy selects what sits between obs and logits; everything else is shared:
     mr      ring (--regime chaos | normal | rolls | soliton) + linear readout      the experiment
     linear  s~ -> Linear: the ring removed                                         what the ring is given
     poly2   (s~_i, s~_i s~_j) -> Linear: explicit quadratic features               what a generic 2nd-order map would give
-    nn      raw obs -> MLP(d-128-n_actions): the previous policy network           the reference
+    nn      raw obs -> MLP(d-128-n_actions): a conventional policy network         the reference
 
 --env: CartPole-v1 (a linear policy suffices), Pendulum-v1 swing-up with the torque discretised to
 {-2, 0, +2} (a linear policy cannot both pump energy at the bottom and damp at the top), or LunarLander-v3
@@ -149,7 +144,7 @@ def calibrate(ring, seed=0):
 
 # ------------------------------------------------------------------------------------ PPO pieces
 def compute_gae(rews, term, trunc, values, boot_vals, gamma, lam):
-    """Same recursion as before, on (T, n_envs) tensors: every column is one env's time line."""
+    """GAE on (T, n_envs) tensors: every column is one env's time line."""
     T = rews.shape[0]; A = torch.zeros_like(rews)
     adv_next = torch.zeros(rews.shape[1])
     done = (term + trunc).clamp(max=1.0)
@@ -300,7 +295,7 @@ def main():
     else:
         featurizer = RawObs(n_obs)
         policy = Policy(n_obs, n_actions, hidden_dim=args.hidden)
-    V = Policy(n_obs, 1)                                      # critic: NN on the raw observation, as before
+    V = Policy(n_obs, 1)                                      # critic: MLP on the raw observation (training only)
     opt = torch.optim.Adam(policy.parameters(), lr=args.lr)
     opt_V = torch.optim.Adam(V.parameters(), lr=args.lr_V)
     n_trainable = sum(p.numel() for p in policy.parameters())
@@ -355,7 +350,7 @@ def main():
         X, Feat, Acts, logp_old, adv, returns, EV = compute_targets(policy, V, buf, args.gamma, args.lam)
 
         update_V(V, opt_V, X, returns, args.n_v_iters)       # critic first: fit the frozen targets
-        for epoch in range(args.n_epochs):
+        for _ in range(args.n_epochs):
             update_PPO(policy, opt, Feat, Acts, logp_old, adv, args.clip_eps, args.ent_coef)
 
         with torch.no_grad():
