@@ -50,7 +50,8 @@ return first reached 475.
 
 **Pendulum-v1 swing-up**, torque restricted to {−2, 0, +2} (0 is perfect, ≈ −1200 is doing nothing).
 A linear policy cannot both pump energy at the bottom and brake at the top. Ring readout as above
-(`--readout_halfwidth 8`).
+(`--readout_halfwidth 8`). All policies train for 250 updates (512k steps) except the chaotic ring,
+stopped at 200 (410k).
 
 | policy | weights | mean | median | episodes > −300 |
 |---|---|---|---|---|
@@ -61,11 +62,12 @@ A linear policy cannot both pump energy at the bottom and brake at the top. Ring
 | ring removed: explicit s̃ᵢs̃ⱼ features | 30 | −159 / −147 / −153 | −130 / −130 / −130 | 0.94 / 1.00 / 0.97 |
 
 **LunarLander-v3** (8 inputs, 4 actions; a landing scores ≳ 200). One tone per input (m = 1…8),
-readout of the 33 lines |m| ≤ 16.
+readout of the 33 lines |m| ≤ 16. The rings train for 250 updates (512k steps), the ring-free
+policies for 400 (819k).
 
 | policy | weights | mean | median | episodes ≥ 200 |
 |---|---|---|---|---|
-| ring, no patterns (stationary, ε = 0.32 F0) | 136 | 263 / 254 | 271 / 265 | 0.95 / 0.92 |
+| ring, no patterns (stationary, ε = 0.32 F0) | 136 | 263 / 254 / 257 | 271 / 265 / 269 | 0.95 / 0.92 / 0.94 |
 | ring, chaotic comb (ε = 0.32 F0, T_avg = 25) | 136 | 215 | 253 | 0.78 |
 | MLP 8-128-4 | 1668 | 267 / 271 / 274 | 276 / 284 / 280 | 0.92 / 0.95 / 0.97 |
 | ring removed: linear layer on s̃ | 36 | 106 / 25 / 7 | 124 / −11 / −11 | 0.28 / 0.03 / 0.06 |
@@ -153,9 +155,8 @@ frozen-policy evaluation reuses the persistent training rings on freshly seeded 
 * **Shown**: a passive Kerr ring can be the whole nonlinear stage of an RL policy, trained in the loop
   by unmodified PPO, in the chaotic (noisy) or stationary (noise-free) regime.
 * **Not shown**: any representational advantage — an explicit quadratic map matches the ring on every
-  task, and the ring's nonlinear share of the features is 5–10 % with four tones, ~45 % with eight. The
-  tasks are toy benchmarks; laser phase noise, thermal drift and detector bandwidth are not modelled
-  (only the chaos itself, and a 1 % detector error in the stationary regimes); several table rows rest
+  task. The
+  tasks are toy benchmarks; laser phase noise, thermal drift and detector bandwidth are not modelled; several table rows rest
   on one or two seeds.
 * **Next**: experimental demonstration, many more inputs, networks of coupled resonators, training the readout in situ by evolution strategies.
 
