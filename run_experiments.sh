@@ -7,9 +7,14 @@
 #   bash run_experiments.sh ablation    # chaotic ring on CartPole: encoding, T_avg, eps, readout width, noise control
 #   bash run_experiments.sh pendulum    # swing-up: linear fails, quadratic features and the rings do not
 #   bash run_experiments.sh lunar       # LunarLander: 8 inputs, 4 actions; linear fails, quadratic / MLP / ring solve it
+#   bash run_experiments.sh topo        # coupled-ring lattice (topological frequency comb) on CartPole, 3 seeds (~1 h/run)
+#   bash run_experiments.sh topo2       # the lattice on the two harder tasks: Pendulum swing-up + LunarLander, 3 seeds each
+#   bash run_experiments.sh topo_chaos  # the lattice past MI threshold: a self-generated chaotic topological comb on CartPole
 # Every run is resumable: an interrupted run continues from its last checkpoint when the script is re-run.
 set -u
 PY=${PYTHON:-python}                       # e.g. PYTHON=python3 bash run_experiments.sh cartpole
+# On macOS, hold off idle sleep for as long as this script (and its lanes) is alive.
+command -v caffeinate > /dev/null && { caffeinate -is -w $$ & }
 run() {  # run <Env> <result-name> <args...>   (skips runs whose result file already exists)
     local env=$1 name=$2; shift 2
     mkdir -p "results/ppo/${env}/logs"
@@ -45,6 +50,23 @@ pendulum)
     ( run Pendulum mr_chaos_seed0 --policy mr --regime chaos --seed 0 --readout_halfwidth 8 --eps 1.0 --n_updates 200
       for p in nn linear poly2; do for s in 0 1 2; do run Pendulum ${p}_seed$s --policy $p --seed $s; done; done ) &
     wait; $PY compare_policies.py --env Pendulum ;;
+topo)
+    ( run CartPole mr_topo_seed0 --policy mr --regime topo --seed 0
+      run CartPole mr_topo_seed2 --policy mr --regime topo --seed 2 ) &
+    ( run CartPole mr_topo_seed1 --policy mr --regime topo --seed 1 ) &
+    wait; $PY compare_policies.py --env CartPole ;;
+topo_chaos)
+    ( run CartPole mr_topo_chaos_seed0 --policy mr --regime topo_chaos --seed 0
+      run CartPole mr_topo_chaos_seed2 --policy mr --regime topo_chaos --seed 2 ) &
+    ( run CartPole mr_topo_chaos_seed1 --policy mr --regime topo_chaos --seed 1 ) &
+    wait; $PY compare_policies.py --env CartPole ;;
+topo2)
+    # Pendulum rings read |m| <= 8 like the published mr_normal runs (see the pendulum case)
+    ( for s in 0 1 2; do run Pendulum mr_topo_seed$s --policy mr --regime topo --seed $s --readout_halfwidth 8; done
+      $PY compare_policies.py --env Pendulum ) &
+    ( for s in 0 1 2; do run LunarLander mr_topo_seed$s --policy mr --regime topo --seed $s --n_updates 250; done
+      $PY compare_policies.py --env LunarLander ) &
+    wait ;;
 lunar)
     ( for s in 0 1 2; do run LunarLander mr_normal_seed$s --policy mr --regime normal --seed $s --n_updates 250; done ) &
     ( run LunarLander mr_chaos_seed0 --policy mr --regime chaos --seed 0 --eps 1.0 --n_updates 250

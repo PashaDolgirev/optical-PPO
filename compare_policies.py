@@ -37,11 +37,13 @@ RUNS = {"mr_chaos":   ("ring, chaotic comb (time-averaged spectrum)", ps.BLUE),
         "mr_normal":  ("ring, no patterns (normal dispersion, stationary)", ps.MAGENTA),
         "mr_rolls":   ("ring, Turing rolls (stationary)", ps.GREEN),
         "mr_soliton_eps0.02": ("ring, single soliton (stationary, $\\varepsilon$ = 0.012 $F_0$)", ps.VIOLET),
-        "mr_soliton_eps0.02_nodet": ("ring, single soliton, noiseless detection", ps.RED)}
-PANELS = {"CartPole": [("Chaotic vs pattern-free ring vs no ring", ["mr_chaos", "mr_normal", "nn", "linear"]),
+        "mr_soliton_eps0.02_nodet": ("ring, single soliton, noiseless detection", ps.RED),
+        "mr_topo":    ("coupled-ring lattice (topological comb, drop port)", ps.AQUA),
+        "mr_topo_chaos": ("coupled-ring lattice, chaotic comb ($F_0^2$ = 150)", ps.YELLOW)}
+PANELS = {"CartPole": [("Chaotic vs pattern-free ring vs no ring", ["mr_chaos", "mr_normal", "mr_topo", "mr_topo_chaos", "nn", "linear"]),
                        ("Ordered states of the ring", ["mr_normal", "mr_rolls", "mr_soliton_eps0.02", "mr_soliton_eps0.02_nodet"])],
-          "Pendulum": [("Swing-up: a linear policy is not enough", ["mr_normal", "mr_chaos", "nn", "linear", "poly2"])],
-          "LunarLander": [("LunarLander: 8 inputs, 4 actions", ["mr_normal", "mr_chaos", "nn", "linear", "poly2"])]}
+          "Pendulum": [("Swing-up: a linear policy is not enough", ["mr_normal", "mr_chaos", "mr_topo", "nn", "linear", "poly2"])],
+          "LunarLander": [("LunarLander: 8 inputs, 4 actions", ["mr_normal", "mr_chaos", "mr_topo", "nn", "linear", "poly2"])]}
 BEST = {"CartPole": 500, "Pendulum": None, "LunarLander": None}
 
 
@@ -95,6 +97,7 @@ def figure_env(env):
                         color=ps.INK2, fontsize=9)
     short = {"mr_chaos": "ring\nchaos", "mr_normal": "ring\nno patterns", "mr_rolls": "ring\nrolls",
              "mr_soliton_eps0.02": "ring\nsoliton", "mr_soliton_eps0.02_nodet": "soliton\nnoiseless",
+             "mr_topo": "lattice\ntopo comb", "mr_topo_chaos": "lattice\nchaotic comb",
              "nn": "MLP", "linear": "linear\n(no ring)", "poly2": "quadratic\n(no ring)"}
     ax.set_xticks(range(len(shown))); ax.set_xticklabels([short[k] for k in shown], fontsize=8)
     ax.set_xlim(-0.6, len(shown) - 0.4); ax.grid(axis="x", visible=False)

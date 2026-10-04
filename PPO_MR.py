@@ -14,6 +14,8 @@ never queried twice, since a chaotic ring would answer differently each time.
 
 --policy selects what sits between obs and logits; everything else is shared:
     mr      ring (--regime chaos | normal | rolls | soliton) + linear readout      the experiment
+            or a coupled-ring lattice (--regime topo: topological frequency comb,
+            pump + tones into one corner ring, drop-port readout downstream)
     linear  s~ -> Linear: the ring removed                                         what the ring is given
     poly2   (s~_i, s~_i s~_j) -> Linear: explicit quadratic features               what a generic 2nd-order map would give
     nn      raw obs -> MLP(d-128-n_actions): a conventional policy network         the reference
@@ -23,6 +25,7 @@ never queried twice, since a chaotic ring would answer differently each time.
 (8 inputs incl. two binary leg contacts, 4 actions; needs gymnasium[box2d]).
 
     python PPO_MR.py --env CartPole-v1 --policy mr --regime chaos --seed 0
+    python PPO_MR.py --env CartPole-v1 --policy mr --regime topo --seed 0            # 4x4 Hafezi lattice
     python PPO_MR.py --env Pendulum-v1 --policy mr --regime normal --seed 0
     python PPO_MR.py --env LunarLander-v3 --policy mr --regime normal --seed 0 --resume   # continue an interrupted run
 
@@ -253,7 +256,7 @@ def main():
     p.add_argument("--ent_coef", type=float, default=None)
     p.add_argument("--reward_scale", type=float, default=None)
     # microring
-    p.add_argument("--regime", choices=["chaos", "normal", "rolls", "soliton"], default="chaos")
+    p.add_argument("--regime", choices=["chaos", "normal", "rolls", "soliton", "topo", "topo_chaos"], default="chaos")
     p.add_argument("--observable", choices=["intensity", "field", "both"], default="intensity")
     p.add_argument("--eps", type=float, default=None, help="sub-band amplitude at s~ = 0 (default: the regime's preset)")
     p.add_argument("--T_relax", type=float, default=None, help="chaos only")
@@ -261,6 +264,12 @@ def main():
     p.add_argument("--detector_noise", type=float, default=None, help="static regimes: relative error of each detected line")
     p.add_argument("--encoding", choices=["offset", "signed"], default="offset")
     p.add_argument("--readout_halfwidth", type=int, default=None, help="read comb lines |m| <= this (0 = all N lines; default 2 x number of inputs)")
+    p.add_argument("--nx", type=int, default=None, help="topo only: lattice width in rings")
+    p.add_argument("--ny", type=int, default=None, help="topo only: lattice height in rings")
+    p.add_argument("--J", type=float, default=None, help="topo only: inter-ring coupling (units of kappa/2)")
+    p.add_argument("--flux", type=float, default=None, help="topo only: flux per plaquette in rad (pi/2 = 1/4 flux quantum)")
+    p.add_argument("--lattice", choices=["iqh", "aqh"], default=None, help="topo only: IQH (Hafezi) or AQH (Haldane-type) lattice")
+    p.add_argument("--Delta", type=float, default=None, help="topo only: pump detuning (default: auto, edge supermode at the chaos operating point)")
     p.add_argument("--obs_noise", type=float, default=0.0, help="--policy linear/poly2 only: std of white noise added to s~")
     p.add_argument("--eval_episodes", type=int, default=64, help="greedy episodes after training (0 = skip)")
     p.add_argument("--tag", type=str, default="")
@@ -284,8 +293,13 @@ def main():
         hw = 2 * n_obs if args.readout_halfwidth is None else args.readout_halfwidth
         overrides = dict(eps=args.eps, encoding=args.encoding, observable=args.observable, squash=task["squash"],
                          feature_modes=None if hw == 0 else list(range(-hw, hw + 1)))
-        overrides.update(dict(T_relax=args.T_relax, T_avg=args.T_avg) if args.regime == "chaos"
-                         else dict(detector_noise=args.detector_noise))
+        if args.regime == "chaos" or args.regime.startswith("topo"):
+            overrides.update(T_relax=args.T_relax, T_avg=args.T_avg)
+        else:
+            overrides.update(detector_noise=args.detector_noise)
+        if args.regime.startswith("topo"):
+            overrides.update(nx=args.nx, ny=args.ny, J=args.J, phi=args.flux,
+                             lattice=args.lattice, Delta=args.Delta)
         featurizer, ring_cfg = make_ring(args.regime, args.n_envs, task["obs_scale"], seed=args.seed, **overrides)
         mean, std = calibrate(featurizer, seed=args.seed)
         policy = LinearReadout(featurizer.n_features, n_actions, mean, std)
