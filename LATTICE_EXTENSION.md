@@ -1,0 +1,143 @@
+# The coupled-ring lattice extension
+
+This note documents what was added to the original single-ring repository to support a second
+physical model: a 2D lattice of coupled Kerr microrings — a *topological frequency comb* — used as
+the policy's feature map in place of the single ring. It covers the physics, the implementation,
+how it was validated, and the first results.
+
+## Why
+
+The original repository asks whether one passive Kerr ring can be the nonlinear stage of an RL
+policy. The natural next question is whether a *network* of rings — specifically a topological
+one, where light transport between the input and the readout port is carried by chiral edge
+states — works the same way, and eventually whether the topological protection buys robustness.
+The lattice model is ported from, and cross-checked against, the standalone simulator
+[Topological Photonic Lattice Explorer](https://github.com/lidaxu/Topological_Photonics_Nonlinear_Explorer)
+(`Linear.py` / `NonLinear.py`), which established the Hamiltonians and the split-step method.
+
+## The model (`microring/lattice.py`)
+
+Each of the R = nx × ny rings carries the full comb of N longitudinal modes; rings are coupled
+site-to-site by a tight-binding Hamiltonian H that is the same for every longitudinal mode:
+
+$$\partial_t a_{r,m} = \left[-(1+i\Delta) - i d_2 m^2\right] a_{r,m}
+  - i\sum_{r'} H_{rr'}\, a_{r',m} - \kappa_{ex,r}\, a_{r,m}
+  + i\,(|\psi|^2\psi)_{r,m} + F_{r,m}$$
+
+in the units of the single-ring LLE (time in photon lifetimes 2/κ, uniform Δ, d₂ and Kerr
+coefficient across rings — identical resonators; per-ring differences enter only through the bus
+loading κ_ex and, if desired, the diagonal of H, which acts as a per-ring detuning/heater).
+
+Two lattice types, ported 1:1 from the explorer (same index conventions, so the matrices can be
+compared element by element):
+
+* **`H_IQH`** — integer-quantum-Hall analogue (the Hafezi lattice): horizontal hoppings carry a
+  row-dependent Peierls phase, i.e. a uniform synthetic flux per plaquette; chiral edge states.
+* **`H_AQH`** — anomalous-quantum-Hall (Haldane-type) analogue: staggered phases on both bond
+  directions plus same-sublattice diagonal hoppings that open the topological gap.
+
+**Integrator.** The same exact-flow Strang splitting as `LLESolver`, with one change: the linear +
+drive sub-flow is now a matrix ODE per longitudinal mode, `da_m/dt = L_m a_m + F_m` with
+`L_m = c_m I − iH_aug`, `H_aug = H − i·diag(κ_ex)`. One eigendecomposition of H_aug yields every
+propagator and drive response exactly:
+
+```
+E_m(h) = V diag(exp((c_m − iλ)h)) V⁻¹          R_m(h) = V diag((exp(zh) − 1)/z) V⁻¹
+```
+
+The Kerr sub-flow stays local per ring (point-wise phase rotation in fast time), so the only
+error remains the O(dt²) splitting error. `CoupledLLESolver` subclasses `LLESolver`; `evolve()`,
+`_kerr()` and the accumulation logic are inherited unchanged and act on `(B, R, N)` states.
+
+**Geometry.** The pump (and the observation tones, as amplitude modulation on the same bus) enters
+the corner ring (0, 0); the policy reads the comb at the drop port of the corner ring the chiral
+edge current actually favours — `default_ports()` places it downstream for the deterministically
+selected gap (see below). The feature map `LatticeChaoticFeatureMap` (`microring/features.py`)
+reuses the streaming protocol of the chaotic single ring: persistent state, one call = one symbol
+of T_relax + T_avg.
+
+**Detuning.** `auto_detuning()` resolves `Delta=None`: diagonalise the Hermitian H, restrict to
+eigenvectors with ≥ 85 % of their weight on the boundary (the in-gap edge band), take the one the
+pump couples to best, and place it at the single-ring operating point (Δ_eff = Δ + λ). The ±λ
+tie is broken towards λ < 0 so the selected gap — and with it the chirality direction — is
+deterministic.
+
+## Operating points (`REGIMES` in `microring/__init__.py`, mapped in `characterization/05`)
+
+The lattice MI threshold is higher than the single ring's because the pump spreads over the
+~boundary-sized edge supermode. Sweeping the pump at the auto-selected edge detuning
+(`characterization/05_lattice_operating_point.py`: Lyapunov exponent, ergodicity of independent
+realisations, drop-port contrast vs repeat noise through the actual feature map):
+
+| F₀² | λ_max | ergodic? | contrast | noise | state |
+|---|---|---|---|---|---|
+| 50 | −0.98 | yes | 0.02 | ~0 | linear-ish transducer |
+| **100** | −0.32 | yes | 0.12 | 0.003 | **`topo`: driven FWM, quasi-stationary** |
+| **150** | +0.44 | yes (gap 1 %) | 0.15 | 0.013 | **`topo_chaos`: self-generated chaotic comb** |
+| 200–400 | +0.8…+1.8 | **no** (gap 12–14 %) | 0.03–0.06 | 0.04–0.09 | chaos washes the input out |
+
+* **`--regime topo`** (F₀² = 100, T_avg = 10) is the lattice analogue of the single ring's
+  `normal` regime: below MI threshold, the 17 (or 33) drop-port lines are *driven* four-wave-mixing
+  products of pump + tones — a nonlinear, essentially noise-free, single-valued map. It is not yet
+  a self-generated comb.
+* **`--regime topo_chaos`** (F₀² = 150, T_avg = 25) is a genuine **chaotic topological comb**
+  (λ_max > 0) that is still ergodic and input-sensitive — the lattice analogue of `chaos`. Beyond
+  F₀² ≈ 200 the time averages become history-dependent and useless as features.
+
+## Validation (`tests/test_lattice.py`)
+
+1. `H_IQH` / `H_AQH` are Hermitian and match the explorer's builders **element by element**
+   (the test lifts the explorer's functions out of its source via `ast`, since importing it pulls
+   in PyQt5; skipped if the explorer repo is absent).
+2. Every propagator and drive-response matrix agrees with `torch.matrix_exp` to < 1e−12.
+3. A 1 × 1 lattice reproduces the validated single-ring `LLESolver` trajectory to **round-off
+   zero** over 500 chaotic steps — the full nonlinear integrator degenerates correctly.
+4. Chiral edge transport: corner-driven 8 × 8 IQH lattice keeps ~87 % of the steady intensity on
+   the boundary rings, and the chirality-downstream corner receives ~7× the power of the mirror
+   corner (this fixes the drop-port convention).
+5. The feature map responds: input contrast ≫ repeat noise.
+
+The Benettin Lyapunov estimator in `microring/diagnostics.py` was generalised to lattice-shaped
+states (norm over everything but the batch axis); single-ring behaviour is unchanged.
+
+## Experiments and first results
+
+`run_experiments.sh` gained three lanes — `topo` (CartPole, 3 seeds), `topo2` (Pendulum +
+LunarLander, 3 seeds each), `topo_chaos` (CartPole on the chaotic comb, 3 seeds) — and
+`compare_policies.py` plots `mr_topo` / `mr_topo_chaos` next to the original policies. Frozen
+greedy evaluations so far (single seeds where noted):
+
+| task | lattice topo | single ring (best regime) | linear (no ring) |
+|---|---|---|---|
+| CartPole | **500.0 ± 0.0** (3 seeds) | 500 | 500 (task is linear) |
+| Pendulum | −457 (seed 0; best episode −1) | −196…−252 (`normal`) | −718…−1038 |
+| LunarLander | +119 (seed 0; best episode +282) | +255…+263 (`normal`) | +7…+106 |
+
+Reading: the lattice clearly **computes** — Pendulum swing-up and LunarLander are unsolvable for
+a linear policy, and the lattice solves both in most episodes — but seed-0 performance is bimodal
+(occasional failures from some initial conditions), landing between the single ring's chaotic and
+stationary regimes. Candidate fixes, untested: `--observable both` (field quadratures lifted
+exactly this kind of degeneracy for the single ring), task-specific detuning targets, more
+readout sites. CartPole on the chaotic comb (`topo_chaos`) was training at the time of writing
+and learning at the same pace as `topo`.
+
+## Episode animations (`animate_topo.py`)
+
+`python animate_topo.py --env CartPole-v1|Pendulum-v1|LunarLander-v3 [--seed k] [--out x.gif|x.mp4]`
+replays one greedy episode from a training checkpoint — the real readout weights and one lane of
+the persistent lattice state — and renders three synchronised panels: the task, the lattice
+(disc size = absolute ring power on a log scale, i.e. the edge-transport structure; disc colour =
+the ring's power deviation from its episode mean in percent, one shared scale for all rings), and
+the standardised drop-port features the linear readout actually consumes.
+`results/ppo/<Env>/topo_<env>.gif` are tracked; `.mp4` renders need ffmpeg.
+
+## What is deliberately not here (yet)
+
+* **Stationary lattice states by Newton continuation** (the lattice analogues of `rolls` /
+  `soliton`, including the nested-soliton topological comb of Mittal et al.): the single-ring
+  Newton machinery scales as a (2RN)² Jacobian and was not ported; `topo` instead reaches its
+  quasi-stationary state by time stepping with finite T_relax (hence its ~0.3 % residual noise).
+* **Disorder robustness** — the fabrication-motivated test (random on-site detunings, topological
+  vs trivial lattice at equal geometry). The solver supports it through the diagonal of H; no CLI
+  yet.
+* Superlattice, zigzag-ribbon and cylinder geometries of the explorer.

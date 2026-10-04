@@ -133,6 +133,39 @@ qualitatively different states; all four were tested (`REGIMES` in `microring/__
 The tones are set at ε = 0.19–0.32 F0: strong enough for a measurably nonlinear response, weak enough
 that the state survives.
 
+## Coupled rings: a topological frequency comb
+
+*(Full details of this extension — model, validation, operating points, first results — in
+[LATTICE_EXTENSION.md](LATTICE_EXTENSION.md).)*
+
+`--regime topo` replaces the single ring by an nx × ny **lattice of coupled rings** (default 4 × 4,
+`microring/lattice.py`), each carrying the full comb of N longitudinal modes:
+
+$$\partial_t a_{r,m} = \left[-(1+i\Delta) - i d_2 m^2\right] a_{r,m} - i\sum_{r'}H_{rr'}\,a_{r',m} - \kappa_{ex,r}\,a_{r,m} + i\,(|\psi|^2\psi)_{r,m} + F_{r,m}.$$
+
+H is a tight-binding Hamiltonian over the ring sites — `H_IQH` (Hafezi lattice: uniform synthetic flux
+per plaquette, chiral edge states) or `H_AQH` (Haldane-type, staggered fluxes plus diagonals) — ported
+from, and cross-checked element by element against, the
+[Topological Photonic Lattice Explorer](https://github.com/lidaxu/Topological_Photonics_Nonlinear_Explorer)
+(`tests/test_lattice.py`). The integrator is the same exact-flow Strang splitting: the linear + drive
+sub-flow is now a matrix exponential per longitudinal mode, built from one eigendecomposition of
+H − iκ_ex; the Kerr sub-flow stays local per ring. A 1 × 1 lattice reproduces `LLESolver` to round-off.
+
+The pump enters the (0, 0) corner ring and the observation tones ride on the same bus; the policy reads
+the comb at the **drop port of the chirality-downstream corner ring** — the light arrives there through
+the topologically protected edge channel (87 % of the steady intensity stays on the boundary rings, and
+the downstream corner receives ~7× more power than the mirror corner; both checked in the tests). The
+detuning is chosen automatically: the edge supermode the pump couples to best is placed at the
+single-ring operating point (`auto_detuning`). Two presets (`characterization/05`):
+
+* **`topo`** (F0² = 100): just below the lattice MI threshold — higher than the single ring's because
+  the pump spreads over the edge mode. The drop-port lines are *driven* four-wave-mixing products
+  (no self-generated comb), quasi-stationary, with input contrast ~10 % and residual noise ~0.3 % —
+  the lattice analogue of the `normal` regime.
+* **`topo_chaos`** (F0² = 150): past MI — a self-generated **chaotic topological comb**
+  (λ_max = +0.44, ergodic), contrast ~15 % against ~1.3 % chaos noise at T_avg = 25 — the lattice
+  analogue of the `chaos` regime. By F0² = 200 ergodicity breaks and the contrast washes out.
+
 ## PPO
 
 Standard clipped-ratio PPO (GAE λ = 0.95, frozen per-buffer targets, critic fitted first, 20 full-batch
@@ -167,7 +200,8 @@ pip install -r requirements.txt
 python PPO_MR.py --env CartPole-v1 --policy mr --regime chaos --seed 0                          # ~25 min, one CPU core
 python PPO_MR.py --env Pendulum-v1 --policy mr --regime normal --seed 0 --readout_halfwidth 8  # ~65 min
 python PPO_MR.py --env LunarLander-v3 --policy mr --regime normal --seed 0 --n_updates 250     # ~40 min; needs gymnasium[box2d]
-bash run_experiments.sh cartpole|ablation|pendulum|lunar     # every run behind results/ppo/, resumable
+python PPO_MR.py --env CartPole-v1 --policy mr --regime topo --seed 0                           # ~60 min: 4x4 coupled-ring lattice
+bash run_experiments.sh cartpole|ablation|pendulum|lunar|topo|topo2|topo_chaos  # every run behind results/ppo/, resumable
 python summarize_results.py                                  # the tables above, from the tracked run files
 python characterization/01_operating_point.py                # 02…04 likewise; --replot re-draws from cache
 ```
@@ -175,11 +209,12 @@ python characterization/01_operating_point.py                # 02…04 likewise;
 | path | what |
 |---|---|
 | `microring/lle_torch.py` | batched LLE solver: multi-tone drive, exact-flow Strang splitting, Newton continuation + Jacobian stability |
-| `microring/features.py` | `ChaoticRingFeatureMap` (persistent rings, time-averaged spectrum), `StaticRingFeatureMap` (stationary state) |
-| `microring/__init__.py` | the four regimes (`REGIMES`), per-task observation scaling (`TASKS`), `make_ring()` |
+| `microring/lattice.py` | coupled-ring lattices: `H_IQH` / `H_AQH` Hamiltonians, `CoupledLLESolver` (per-mode matrix exponentials), edge-supermode auto-detuning |
+| `microring/features.py` | `ChaoticRingFeatureMap` (persistent rings, time-averaged spectrum), `StaticRingFeatureMap` (stationary state), `LatticeChaoticFeatureMap` (topological comb, drop-port readout) |
+| `microring/__init__.py` | the regimes (`REGIMES`), per-task observation scaling (`TASKS`), `make_ring()` |
 | `microring/diagnostics.py` | Lyapunov exponent, split-half SNR, linear decodability, variance decomposition |
-| `PPO_MR.py` | PPO; `--policy mr, linear, poly2, nn`; `--regime chaos, normal, rolls, soliton`; `--env`; `--resume` |
-| `characterization/01…04` | why this operating point, this tone strength, this averaging window; the ordered states |
+| `PPO_MR.py` | PPO; `--policy mr, linear, poly2, nn`; `--regime chaos, normal, rolls, soliton, topo`; `--env`; `--resume` |
+| `characterization/01…05` | why this operating point, this tone strength, this averaging window; the ordered states; the lattice chaos onset |
 | `tests/` | port vs the original JAX solver; steady-state, regime and symmetry checks |
 | `run_experiments.sh`, `summarize_results.py`, `compare_policies.py` | the exact published runs, the tables, the figures |
 
