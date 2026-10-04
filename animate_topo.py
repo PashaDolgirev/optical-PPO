@@ -40,7 +40,8 @@ MAX_STEPS = {"CartPole-v1": 500, "Pendulum-v1": 200, "LunarLander-v3": 1000}
 
 p = argparse.ArgumentParser()
 p.add_argument("--env", choices=list(READOUT_HALFWIDTH), default="CartPole-v1")
-p.add_argument("--seed", type=int, default=0, help="which mr_topo training seed's checkpoint to load")
+p.add_argument("--regime", choices=["topo", "topo_chaos"], default="topo")
+p.add_argument("--seed", type=int, default=0, help="which training seed's checkpoint to load")
 p.add_argument("--ep-seed", type=int, default=7, help="episode seed")
 p.add_argument("--out", type=str, default=None, help=".gif (Pillow) or .mp4/.webm/.mov (ffmpeg); "
                "default results/ppo/<Env>/topo_<env>.gif")
@@ -48,13 +49,13 @@ p.add_argument("--every", type=int, default=3, help="render every n-th control s
 p.add_argument("--fps", type=int, default=12)
 args = p.parse_args()
 short = args.env.split("-")[0]
-out = args.out or f"results/ppo/{short}/topo_{short.lower()}.gif"
+out = args.out or f"results/ppo/{short}/{args.regime}_{short.lower()}.gif"
 
 # ---------------------------------------------------------------- trained policy + lattice
-c = torch.load(f"results/ppo/{short}/checkpoints/mr_topo_seed{args.seed}.pt", weights_only=False)
+c = torch.load(f"results/ppo/{short}/checkpoints/mr_{args.regime}_seed{args.seed}.pt", weights_only=False)
 task = TASKS[args.env]
 hw = READOUT_HALFWIDTH[args.env]
-ring, cfg = make_ring("topo", 1, task["obs_scale"], seed=args.seed, squash=task["squash"],
+ring, cfg = make_ring(args.regime, 1, task["obs_scale"], seed=args.seed, squash=task["squash"],
                       feature_modes=list(range(-hw, hw + 1)))
 assert ring.n_features == c["policy"]["mean"].shape[0], "feature layout differs from the checkpoint"
 ring.a = c["ring_a"][:1].clone()                    # one lane of the persistent trained lattice
@@ -186,7 +187,8 @@ PANELS = {"CartPole-v1": panel_cartpole, "Pendulum-v1": panel_pendulum, "LunarLa
 frames = range(0, T, args.every)
 fig, (ax_task, ax_lat, ax_comb) = plt.subplots(
     1, 3, figsize=(11.5, 3.6), gridspec_kw=dict(width_ratios=[1.35, 1.0, 1.1]))
-fig.suptitle(f"Topological frequency comb (4×4 Hafezi lattice) as the {short} policy",
+kind = "chaotic topological comb" if args.regime == "topo_chaos" else "topological frequency comb"
+fig.suptitle(f"{kind.capitalize()} (4×4 Hafezi lattice) as the {short} policy",
              x=0.02, ha="left", fontsize=12, fontweight="semibold")
 draw_task = PANELS[args.env](ax_task)
 ax_task.set_title("the task: greedy trained policy", fontsize=10)
