@@ -20,9 +20,7 @@ The lattice model is ported from, and cross-checked against, the standalone simu
 Each of the R = nx × ny rings carries the full comb of N longitudinal modes; rings are coupled
 site-to-site by a tight-binding Hamiltonian H that is the same for every longitudinal mode:
 
-$$\partial_t a_{r,m} = \left[-(1+i\Delta) - i d_2 m^2\right] a_{r,m}
-  - i\sum_{r'} H_{rr'}\, a_{r',m} - \kappa_{ex,r}\, a_{r,m}
-  + i\,(|\psi|^2\psi)_{r,m} + F_{r,m}$$
+$$\partial_t a_{r,m} = \left[-(1+i\Delta) - i d_2 m^2\right] a_{r,m} - i\sum_{r'} H_{rr'} a_{r',m} - \kappa_{ex,r} a_{r,m} + i(|\psi|^2\psi)_{r,m} + F_{r,m}$$
 
 in the units of the single-ring LLE (time in photon lifetimes 2/κ, uniform Δ, d₂ and Kerr
 coefficient across rings — identical resonators; per-ring differences enter only through the bus

@@ -141,7 +141,7 @@ that the state survives.
 `--regime topo` replaces the single ring by an nx × ny **lattice of coupled rings** (default 4 × 4,
 `microring/lattice.py`), each carrying the full comb of N longitudinal modes:
 
-$$\partial_t a_{r,m} = \left[-(1+i\Delta) - i d_2 m^2\right] a_{r,m} - i\sum_{r'}H_{rr'}\,a_{r',m} - \kappa_{ex,r}\,a_{r,m} + i\,(|\psi|^2\psi)_{r,m} + F_{r,m}.$$
+$$\partial_t a_{r,m} = \left[-(1+i\Delta) - i d_2 m^2\right] a_{r,m} - i\sum_{r'}H_{rr'} a_{r',m} - \kappa_{ex,r} a_{r,m} + i(|\psi|^2\psi)_{r,m} + F_{r,m}.$$
 
 H is a tight-binding Hamiltonian over the ring sites — `H_IQH` (Hafezi lattice: uniform synthetic flux
 per plaquette, chiral edge states) or `H_AQH` (Haldane-type, staggered fluxes plus diagonals) — ported
