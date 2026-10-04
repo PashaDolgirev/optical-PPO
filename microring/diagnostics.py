@@ -12,21 +12,24 @@ def lyapunov(solver, a, F0, f, T=100.0, tau=1.0, d0=1e-7, seed=1):
     by d0, renormalise the displacement every tau, average the log growth. Returns (B,)
     exponents in units of the LLE time (1 / (kappa/2)). Use a complex128 solver.
 
-    a : (B, N) states on the attractor,  f : (B, n_drive) sub-band amplitudes held fixed.
+    a : (B, N) states on the attractor -- or (B, R, N) for a coupled-ring lattice --
+    f : (B, n_drive) sub-band amplitudes held fixed.
     """
     B = a.shape[0]
+    norm = lambda x: x.abs().pow(2).flatten(1).sum(-1).sqrt()  # 2-norm over everything but the batch
+    bshape = (B,) + (1,) * (a.dim() - 1)
     g = torch.Generator().manual_seed(seed)
     pert = torch.view_as_complex(torch.randn(*a.shape, 2, dtype=solver.rdtype, generator=g)).to(solver.dtype)
-    pert = pert / pert.abs().pow(2).sum(-1, keepdim=True).sqrt() * d0
+    pert = pert / norm(pert).view(bshape) * d0
     solver.set_drive(F0, torch.cat([f, f]))                    # reference and displaced copies share the drive
     ab = torch.cat([a, a + pert])
     n, log_growth = int(round(tau / solver.dt)), torch.zeros(B, dtype=torch.float64)
     for _ in range(int(round(T / tau))):
         ab, _ = solver.evolve(ab, n)
         ref, dis = ab[:B], ab[B:]
-        d = (dis - ref).abs().pow(2).sum(-1).sqrt()
+        d = norm(dis - ref)
         log_growth += torch.log(d / d0).double()
-        ab = torch.cat([ref, ref + (dis - ref) * (d0 / d)[:, None]])
+        ab = torch.cat([ref, ref + (dis - ref) * (d0 / d).view(bshape)])
     return (log_growth / T).numpy()
 
 

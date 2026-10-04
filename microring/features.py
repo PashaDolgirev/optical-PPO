@@ -34,6 +34,7 @@ is then reflection symmetric and pins the pattern.
 import numpy as np
 import torch
 from .lle_torch import LLESolver, cw_intracavity_power
+from .lattice import CoupledLLESolver
 
 
 class _RingBase:
@@ -122,6 +123,51 @@ class ChaoticRingFeatureMap(_RingBase):
 
 
 MicroringFeatureMap = ChaoticRingFeatureMap          # name used by the first round of scripts
+
+
+class LatticeChaoticFeatureMap(_RingBase):
+    """
+    Topological-comb feature map: a coupled-ring lattice (microring/lattice.py) run exactly
+    like the chaotic single ring -- persistent state, one call = one symbol of T_relax + T_avg.
+
+    The pump F0 enters `pump_site` on m = 0; the observation tones enter `drive_site` on the
+    sub-band modes. Detection is the comb at the drop port of each ring in `readout_sites`
+    (default: the drop ring alone), so n_features = len(readout_sites) * len(feature_modes) *
+    (1, 2 or 3 depending on `observable`). Every ring in {pump, drive} + readout_sites carries
+    a bus coupler and the corresponding extra loss `kex`.
+    """
+
+    def __init__(self, n_envs, obs_scale, H, F0=np.sqrt(10.0), eps=0.6, drive_modes=None, two_sided=False,
+                 encoding="offset", squash="tanh", observable="intensity",
+                 T_relax=3.0, T_avg=25.0, T_warmup=100.0, sample_dt=0.05,
+                 N=64, dt=0.01, Delta=1.76, d2=0.0125, feature_modes=None,
+                 pump_site=0, drive_site=None, readout_sites=(0,), kex=1.0,
+                 dtype=torch.complex64, device="cpu", seed=0):
+        self._setup(n_envs, obs_scale, F0, eps, drive_modes, two_sided, encoding, squash,
+                    observable, feature_modes, N)
+        self.readout_sites = tuple(int(s) for s in readout_sites)
+        self.n_features *= len(self.readout_sites)
+        drive_site = pump_site if drive_site is None else drive_site
+        kex_sites = {s: kex for s in {int(pump_site), int(drive_site), *self.readout_sites}}
+        self.solver = CoupledLLESolver(H, N=N, dt=dt, Delta=Delta, d2=d2, drive_modes=self.tone_modes,
+                                       pump_site=pump_site, drive_site=drive_site, kex_sites=kex_sites,
+                                       dtype=dtype, device=device)
+        self.n_relax, self.n_avg = int(round(T_relax / dt)), int(round(T_avg / dt))
+        self.sample_every = max(1, int(round(sample_dt / dt)))
+        self.T_relax, self.T_avg = T_relax, T_avg
+        # grow the comb from noise with the tones at their s = 0 value
+        self.a = self.solver.random_state(n_envs, generator=torch.Generator().manual_seed(seed))
+        self.solver.set_drive(self.F0, self.encode(torch.zeros(n_envs, self.n_inputs)))
+        self.a, _ = self.solver.evolve(self.a, int(round(T_warmup / dt)))
+
+    @torch.no_grad()
+    def __call__(self, obs):
+        """One symbol per lattice; returns (B, n_features) float32."""
+        self.solver.set_drive(self.F0, self.encode(obs))
+        self.a, _ = self.solver.evolve(self.a, self.n_relax)
+        self.a, (mean_I, mean_a) = self.solver.evolve(self.a, self.n_avg, accumulate=True,
+                                                      sample_every=self.sample_every, with_field=True)
+        return torch.cat([self.detect(mean_I[:, s], mean_a[:, s]) for s in self.readout_sites], 1)
 
 
 class StaticRingFeatureMap(_RingBase):

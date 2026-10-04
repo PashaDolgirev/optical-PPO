@@ -161,7 +161,7 @@ claims = {"chaos":   "chaotic comb ($\\Delta$ = 1.76, $d_2$ > 0, $F_0^2$ = 10)",
           "rolls":   "Turing rolls ($\\Delta$ = 0, $d_2$ > 0, $F_0^2$ = 2.5)",
           "soliton": "single soliton ($\\Delta$ = 3, $d_2$ > 0, $F_0^2$ = 3)"}
 fig, axes = plt.subplots(4, 3, figsize=(13.5, 13), gridspec_kw=dict(width_ratios=[1.3, 1, 1]))
-for i, name in enumerate(REGIMES):
+for i, name in enumerate(rows):                      # the four single-ring regimes (not "topo")
     row, r = rows[name], REGIMES[name]
     t, xt = row["map"]
     ax = axes[i, 0]
