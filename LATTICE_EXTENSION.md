@@ -142,21 +142,24 @@ states (norm over everything but the batch axis); single-ring behaviour is uncha
 `run_experiments.sh` gained three lanes — `topo` (CartPole, 3 seeds), `topo2` (Pendulum +
 LunarLander, 3 seeds each), `topo_chaos` (CartPole on the chaotic comb, 3 seeds) — and
 `compare_policies.py` plots `mr_topo` / `mr_topo_chaos` next to the original policies. Frozen
-greedy evaluations so far (single seeds where noted):
+greedy evaluations, 3 seeds each:
 
 | task | lattice topo | single ring (best regime) | linear (no ring) |
 |---|---|---|---|
-| CartPole | **500.0 ± 0.0** (3 seeds) | 500 | 500 (task is linear) |
-| Pendulum | −457 (seed 0; best episode −1) | −196…−252 (`normal`) | −718…−1038 |
-| LunarLander | +119 (seed 0; best episode +282) | +255…+263 (`normal`) | +7…+106 |
+| CartPole | **500.0 ± 0.0 / 500.0 / 500.0** | 500 | 500 (task is linear) |
+| CartPole, chaotic comb (`topo_chaos`) | 157 / **500.0 / 500.0** | 500 (`chaos`) | — |
+| Pendulum | −457 / −456 / −435 | −196…−252 (`normal`) | −718…−1038 |
+| LunarLander | +119 / +77 / **+206** | +255…+263 (`normal`) | +7…+106 |
 
-Reading: the lattice clearly **computes** — Pendulum swing-up and LunarLander are unsolvable for
-a linear policy, and the lattice solves both in most episodes — but seed-0 performance is bimodal
-(occasional failures from some initial conditions), landing between the single ring's chaotic and
-stationary regimes. Candidate fixes, untested: `--observable both` (field quadratures lifted
-exactly this kind of degeneracy for the single ring), task-specific detuning targets, more
-readout sites. CartPole on the chaotic comb (`topo_chaos`) was training at the time of writing
-and learning at the same pace as `topo`.
+Reading. (i) The lattice clearly **computes**: Pendulum swing-up and LunarLander are unsolvable
+for a linear policy, and the lattice solves both in most episodes. (ii) The **self-generated
+chaotic comb works as a feature map** — two of three `topo_chaos` seeds solve CartPole perfectly
+through 1.3 % chaos noise (the third trains to 500 but its frozen readout evaluates at a tight
+157 ± 9: a defect of that seed's readout, not noise). (iii) On the harder tasks the lattice is
+**reproducibly bimodal**: every Pendulum seed reaches near-perfect episodes (best −1…−2) *and*
+fails from some initial conditions (worst ~−1500), averaging below the single ring's stationary
+regime. Candidate fixes, untested: `--observable both` (field quadratures lifted exactly this
+kind of degeneracy for the single ring), task-specific detuning targets, more readout sites.
 
 ## Episode animations (`animate_topo.py`)
 
