@@ -40,12 +40,15 @@ REGIMES = {
     "topo":    dict(kind="lattice", N=64, dt=0.01, Delta=None, target_Delta=1.76, d2=0.0125,
                     F0=10.0, eps=0.6, two_sided=False, T_relax=3.0, T_avg=10.0,
                     nx=4, ny=4, J=5.0, phi=float(np.pi / 2), lattice="iqh", kex=1.0),
-    # topo_chaos: the same lattice pumped past its MI threshold -- a self-generated CHAOTIC
-    # topological comb (lambda_max = +0.44, ergodic). characterization/05: F0^2 = 150 is the
-    # window where the comb is chaotic AND ergodic AND input-sensitive (contrast 0.15 vs chaos
-    # noise 0.013 at T_avg = 25); by F0^2 = 200 ergodicity breaks and the contrast washes out.
+    # topo_chaos: the same lattice pumped past its MI threshold with STRONG tones -- a
+    # self-generated, strongly chaotic topological comb: lambda_max = +1.10, 2x the single
+    # ring's published chaos point (+0.54). The tones are the key knob (characterization/05
+    # maps the (F0^2, eps) grid): at eps = 1.5 the same pump gives lambda 0.49 -> 1.10, an
+    # ergodicity gap of 0.6% (stable from T = 100 to 400: mixing, not multistable) and the
+    # best drop-port contrast on the map (0.38 vs noise ~0.03-0.06 at T_avg = 25, ratio >= 7);
+    # at eps = 0.6 and higher pumps the contrast collapses to the noise level.
     "topo_chaos": dict(kind="lattice", N=64, dt=0.01, Delta=None, target_Delta=1.76, d2=0.0125,
-                       F0=float(np.sqrt(150.0)), eps=0.6, two_sided=False, T_relax=3.0, T_avg=25.0,
+                       F0=float(np.sqrt(150.0)), eps=1.5, two_sided=False, T_relax=3.0, T_avg=25.0,
                        nx=4, ny=4, J=5.0, phi=float(np.pi / 2), lattice="iqh", kex=1.0),
 }
 OPERATING_POINT = {k: REGIMES["chaos"][k] for k in ("N", "dt", "Delta", "d2", "F0")}

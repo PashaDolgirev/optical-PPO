@@ -162,9 +162,10 @@ single-ring operating point (`auto_detuning`). Two presets (`characterization/05
   the pump spreads over the edge mode. The drop-port lines are *driven* four-wave-mixing products
   (no self-generated comb), quasi-stationary, with input contrast ~10 % and residual noise ~0.3 % —
   the lattice analogue of the `normal` regime.
-* **`topo_chaos`** (F0² = 150): past MI — a self-generated **chaotic topological comb**
-  (λ_max = +0.44, ergodic), contrast ~15 % against ~1.3 % chaos noise at T_avg = 25 — the lattice
-  analogue of the `chaos` regime. By F0² = 200 ergodicity breaks and the contrast washes out.
+* **`topo_chaos`** (F0² = 150, ε = 1.5): past MI with strong tones — a **strongly chaotic
+  topological comb** (λ_max = +1.10, 2× the single ring's chaos point, ergodic to 0.6 %),
+  contrast ~38 % against ~3 % chaos noise at T_avg = 25 — the lattice analogue of the `chaos`
+  regime. The tone amplitude is decisive: weak tones halve λ and lose most of the contrast.
 
 ![The two lattice operating regimes](tests/lattice_regimes.png)
 

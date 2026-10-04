@@ -81,7 +81,7 @@ overridable from the CLI:
 | Δ | auto | `auto_detuning`: the edge supermode with the best pump overlap is placed at Δ_eff = Δ + λ = 1.76, the single-ring chaos operating point |
 | d₂ | 0.0125 | anomalous dispersion, unchanged from the single-ring `chaos` preset |
 | F₀² | 100 (`topo`) / 150 (`topo_chaos`) | from the pump scan in `characterization/05` (next section) |
-| ε (tone amplitude) | 0.6 | kept at the single ring's absolute value. Note the *relative* modulation is much weaker here (ε/F₀ = 0.06 vs 0.19 for the single ring) — the measured drop-port contrast of 10–15 % says it is still plenty |
+| ε (tone amplitude) | 0.6 (`topo`) / 1.5 (`topo_chaos`) | `topo` keeps the single ring's absolute value (relative modulation ε/F₀ = 0.06, contrast ~10 % — plenty below threshold). In the strongly chaotic regime weak tones are washed out; ε = 1.5 (ε/F₀ ≈ 0.11) restores contrast *and* strengthens chaos and ergodicity — see the operating-point table |
 | N | 64 modes/ring | half the single ring's 128: the sub-threshold comb is narrow, and mode count multiplies the R² cost |
 | dt | 0.01 | the linear flow is exact at any dt; dt only controls the O(dt²) Kerr–coupling splitting error, which needs J·dt ≪ 1 (here 0.05) |
 | T_relax / T_avg | 3 / 10 (`topo`), 3 / 25 (`topo_chaos`) | relaxation rate is ~κ_in = 1, so 3 lifetimes forgets the previous symbol to e⁻³; T_avg from the noise-vs-window scan in `characterization/05` |
@@ -106,20 +106,25 @@ The lattice MI threshold is higher than the single ring's because the pump sprea
 (`characterization/05_lattice_operating_point.py`: Lyapunov exponent, ergodicity of independent
 realisations, drop-port contrast vs repeat noise through the actual feature map):
 
-| F₀² | λ_max | ergodic? | contrast | noise | state |
-|---|---|---|---|---|---|
-| 50 | −0.98 | yes | 0.02 | ~0 | linear-ish transducer |
-| **100** | −0.32 | yes | 0.12 | 0.003 | **`topo`: driven FWM, quasi-stationary** |
-| **150** | +0.44 | yes (gap 1 %) | 0.15 | 0.013 | **`topo_chaos`: self-generated chaotic comb** |
-| 200–400 | +0.8…+1.8 | **no** (gap 12–14 %) | 0.03–0.06 | 0.04–0.09 | chaos washes the input out |
+| F₀² | ε | λ_max | ergodic? (gap at T=400) | contrast | noise | state |
+|---|---|---|---|---|---|---|
+| 50 | 0.6 | −0.98 | yes | 0.02 | ~0 | linear-ish transducer |
+| **100** | **0.6** | −0.32 | yes | 0.12 | 0.003 | **`topo`: driven FWM, quasi-stationary** |
+| 150 | 0.6 | +0.49 | yes | 0.15 | 0.018 | weakly chaotic comb (old preset) |
+| 200–400 | 0.6 | +0.8…+1.8 | borderline (6–13 %) | 0.03–0.05 | 0.02–0.05 | chaos washes weak tones out |
+| **150** | **1.5** | **+1.10** | **yes (0.6 %, stable 100→400)** | **0.38** | **0.031** | **`topo_chaos`: strongly chaotic comb** |
+| 200–400 | 1.5 | +1.4…+1.9 | yes (3–6 %) | 0.07–0.24 | 0.04–0.05 | stronger chaos, worse contrast/noise |
 
-* **`--regime topo`** (F₀² = 100, T_avg = 10) is the lattice analogue of the single ring's
-  `normal` regime: below MI threshold, the 17 (or 33) drop-port lines are *driven* four-wave-mixing
-  products of pump + tones — a nonlinear, essentially noise-free, single-valued map. It is not yet
-  a self-generated comb.
-* **`--regime topo_chaos`** (F₀² = 150, T_avg = 25) is a genuine **chaotic topological comb**
-  (λ_max > 0) that is still ergodic and input-sensitive — the lattice analogue of `chaos`. Beyond
-  F₀² ≈ 200 the time averages become history-dependent and useless as features.
+* **`--regime topo`** (F₀² = 100, ε = 0.6, T_avg = 10) is the lattice analogue of the single
+  ring's `normal` regime: below MI threshold, the drop-port lines are *driven* four-wave-mixing
+  products of pump + tones — a nonlinear, essentially noise-free, single-valued map. It is not
+  yet a self-generated comb.
+* **`--regime topo_chaos`** (F₀² = 150, ε = 1.5, T_avg = 25) is a **strongly chaotic topological
+  comb**: λ_max = +1.10, twice the single ring's published chaos point (+0.54). The tone
+  amplitude is the decisive knob: at the same pump, ε = 0.6 → 1.5 doubles λ (+0.49 → +1.10),
+  tightens the ergodicity gap to 0.6 % (stable from T = 100 to 400 — mixing, not multistable)
+  and raises the drop-port contrast to 0.38, the best anywhere on the map. At higher pumps or
+  weak tones the contrast slides back towards the noise level.
 
 ## Validation (`tests/test_lattice.py`)
 
@@ -153,19 +158,21 @@ greedy evaluations, 3 seeds each:
 | task | lattice topo | single ring (best regime) | linear (no ring) |
 |---|---|---|---|
 | CartPole | **500.0 ± 0.0 / 500.0 / 500.0** | 500 | 500 (task is linear) |
-| CartPole, chaotic comb (`topo_chaos`) | 157 / **500.0 / 500.0** | 500 (`chaos`) | — |
 | Pendulum | −457 / −456 / −435 | −196…−252 (`normal`) | −718…−1038 |
 | LunarLander | +119 / +77 / **+206** | +255…+263 (`normal`) | +7…+106 |
 
+(`topo_chaos` runs on all three tasks are in progress at the strong-chaos operating point;
+an earlier, weakly chaotic preset — F₀² = 150, λ = +0.44 — already solved CartPole at
+500/500/157 across its three seeds.)
+
 Reading. (i) The lattice clearly **computes**: Pendulum swing-up and LunarLander are unsolvable
-for a linear policy, and the lattice solves both in most episodes. (ii) The **self-generated
-chaotic comb works as a feature map** — two of three `topo_chaos` seeds solve CartPole perfectly
-through 1.3 % chaos noise (the third trains to 500 but its frozen readout evaluates at a tight
-157 ± 9: a defect of that seed's readout, not noise). (iii) On the harder tasks the lattice is
-**reproducibly bimodal**: every Pendulum seed reaches near-perfect episodes (best −1…−2) *and*
-fails from some initial conditions (worst ~−1500), averaging below the single ring's stationary
-regime. Candidate fixes, untested: `--observable both` (field quadratures lifted exactly this
-kind of degeneracy for the single ring), task-specific detuning targets, more readout sites.
+for a linear policy, and the lattice solves both in most episodes. (ii) A **self-generated
+chaotic comb works as a feature map** (CartPole solved through chaos noise even at the old weak
+point). (iii) On the harder tasks the lattice is **reproducibly bimodal**: every Pendulum seed
+reaches near-perfect episodes (best −1…−2) *and* fails from some initial conditions (worst
+~−1500), averaging below the single ring's stationary regime. Candidate fixes, untested:
+`--observable both` (field quadratures lifted exactly this kind of degeneracy for the single
+ring), task-specific detuning targets, more readout sites.
 
 ## Episode animations (`animate_topo.py`)
 

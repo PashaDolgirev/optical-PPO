@@ -15,7 +15,10 @@ Five panels, one frame per control step:
            COLOUR = the ring's power deviation from its episode mean, in percent, on ONE
                     shared diverging scale for every ring: the input-driven modulation.
            "in" = pump/tone ring, "out" = drop-port ring the policy reads.
-  third  : the faithful OSA view -- the full drop-port comb spectrum <|a_m|^2> (all N lines,
+  third  : the drop-port LINEAR resonance spectrum (transmission vs pump detuning Delta,
+           static): the lattice supermodes within one FSR, with the operating pump
+           detuning marked -- it sits next to the in-gap edge supermode
+  fourth : the faithful OSA view -- the full drop-port comb spectrum <|a_m|^2> (all N lines,
            dB re the episode maximum, time-averaged over the symbol exactly as detection
            does), with the policy's readout window |m| <= hw shaded
   right  : the policy's entire view of the world -- the detected lines as the
@@ -36,7 +39,7 @@ from matplotlib import animation
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import FancyArrow, Polygon, Rectangle
 
-from microring import TASKS, make_ring
+from microring import TASKS, edge_sites, make_ring, pump_supermode
 from microring import plot_style as ps
 from PPO_MR import LinearReadout, make_env
 
@@ -207,10 +210,24 @@ lc_x = np.array([u["env_steps"] for u in upd]) / 1e3
 lc_y = np.array([u["mean_return"] for u in upd], dtype=float)
 lc_eval = rlog.get("eval", {}).get("mean")
 
+# ------------------------------------------------------- linear drop-port resonance scan
+# steady linear response on mode m = 0: a*(delta) = -L^-1 F with L = -(1+i delta)I - iH_aug;
+# one eigendecomposition gives the whole scan
+H_aug = ring.solver.H - 1j * np.diag(ring.solver.kex)
+lam_r, V_r = np.linalg.eig(H_aug)
+Fv = np.zeros(ring.solver.R, dtype=complex)
+Fv[ring.solver.pump_site] = float(ring.F0)
+coef = np.linalg.solve(V_r, Fv)
+deltas = np.linspace(-16, 16, 801)
+denom = -(1.0 + 1j * deltas[:, None]) - 1j * lam_r[None, :]
+E_drop = -(V_r[drop][None, :] / denom * coef[None, :]).sum(1)
+P_res = np.abs(E_drop) ** 2
+Delta_op = ring.solver.Delta
+
 # ------------------------------------------------------------------------------- figure
 frames = range(0, T, args.every)
-fig, (ax_task, ax_lc, ax_lat, ax_spec, ax_comb) = plt.subplots(
-    1, 5, figsize=(17.2, 3.6), gridspec_kw=dict(width_ratios=[1.35, 0.85, 1.0, 1.15, 1.1]))
+fig, ((ax_task, ax_lc, ax_lat), (ax_res, ax_spec, ax_comb)) = plt.subplots(
+    2, 3, figsize=(13.2, 6.9), gridspec_kw=dict(width_ratios=[1.25, 1.0, 1.05]))
 kind = "chaotic topological comb" if args.regime == "topo_chaos" else "topological frequency comb"
 fig.suptitle(f"{kind.capitalize()} (4×4 Hafezi lattice) as the {short} policy",
              x=0.02, ha="left", fontsize=12, fontweight="semibold")
@@ -266,6 +283,22 @@ cb = fig.colorbar(dots, ax=ax_lat, fraction=0.045, pad=0.02,
                   ticks=[-vmax, 0, vmax], format="%+.1f%%")
 cb.ax.tick_params(labelsize=7)
 cb.outline.set_visible(False)
+
+# resonance panel (static): where the pump sits among the lattice supermodes
+lam_sel, _, _ = pump_supermode(ring.solver.H, ring.solver.pump_site, edge=edge_sites(nx, ny))
+ax_res.plot(deltas, P_res / P_res.max(), color=ps.BLUE, lw=1.4)
+ax_res.axvline(-lam_sel, color=ps.MUTED, lw=1.1, ls=":")
+ax_res.text(-lam_sel, 0.97, f"edge supermode ($\\Delta$ = {-lam_sel:.2f}) ", color=ps.INK2,
+            fontsize=7, ha="right", va="top", rotation=90)
+ax_res.axvline(Delta_op, color=ps.ORANGE, lw=1.4, ls="--")
+ax_res.text(Delta_op, 0.97, f" pump ($\\Delta$ = {Delta_op:.2f}, $\\Delta_{{eff}}$ = "
+            f"{Delta_op + lam_sel:.2f})", color=ps.ORANGE, fontsize=7, ha="left",
+            va="top", rotation=90)
+ax_res.set_ylim(0, 1.05)
+ax_res.set_xlabel("probe detuning $\\Delta$ ($\\kappa/2$)", fontsize=9)
+ax_res.set_ylabel("drop-port transmission (norm.)", fontsize=9)
+ax_res.tick_params(labelsize=8)
+ax_res.set_title("lattice resonances at the drop port", fontsize=10)
 
 # spectrum panel: the faithful OSA view of the drop-port comb (all N lines, dB)
 m_all = ring.solver.modes_shifted
