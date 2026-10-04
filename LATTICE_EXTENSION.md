@@ -12,7 +12,7 @@ policy. The natural next question is whether a *network* of rings — specifical
 one, where light transport between the input and the readout port is carried by chiral edge
 states — works the same way, and eventually whether the topological protection buys robustness.
 The lattice model is ported from, and cross-checked against, the standalone simulator
-[Topological Photonic Lattice Explorer](https://github.com/lidaxu/Topological_Photonics_Nonlinear_Explorer)
+[Topological Photonic Lattice Explorer](https://github.com/lidaxu-physics/Topological_Photonics_Nonlinear_Explorer)
 (`Linear.py` / `NonLinear.py`), which established the Hamiltonians and the split-step method.
 
 ## The model (`microring/lattice.py`)
@@ -59,6 +59,45 @@ eigenvectors with ≥ 85 % of their weight on the boundary (the in-gap edge band
 pump couples to best, and place it at the single-ring operating point (Δ_eff = Δ + λ). The ±λ
 tie is broken towards λ < 0 so the selected gap — and with it the chirality direction — is
 deterministic.
+
+## Parameter choices: units and defaults
+
+**Units.** Everything is in the single-ring LLE normalisation: time in photon lifetimes 2/κ_in,
+so the **intrinsic loss rate is κ_in ≡ 1 by definition** — it is the unit, not a free parameter.
+Every other rate (J, κ_ex, Δ, d₂m², the Lyapunov exponent) is quoted in units of κ_in = κ/2.
+To convert to a physical device, multiply by half the loaded single-ring linewidth: e.g. for
+κ/2π = 200 MHz, J = 5 means a ring-ring coupling of 2π × 500 MHz.
+
+Defaults of the `topo` / `topo_chaos` presets (`REGIMES` in `microring/__init__.py`), all
+overridable from the CLI:
+
+| parameter | value | why |
+|---|---|---|
+| nx × ny | 4 × 4 (R = 16) | smallest lattice with a bulk (4 interior rings); per-step cost scales as R², and 16 rings is ~20× the single ring — one CartPole run ≈ 1 h |
+| J | 5 | see below |
+| φ (flux/plaquette) | π/2 (α = 1/4) | the standard Hofstadter flux with the largest, cleanest gaps; Chern ±1 edge bands |
+| κ_ex | 1.0 | bus loading of the pump ring and the drop ring only (and the tone ring if separate): extra loss equal to the intrinsic loss, i.e. close to critical coupling; it doubles those rings' linewidth and enters the solver as H_aug = H − i·diag(κ_ex) |
+| κ_in | ≡ 1 | the time unit (see above) |
+| Δ | auto | `auto_detuning`: the edge supermode with the best pump overlap is placed at Δ_eff = Δ + λ = 1.76, the single-ring chaos operating point |
+| d₂ | 0.0125 | anomalous dispersion, unchanged from the single-ring `chaos` preset |
+| F₀² | 100 (`topo`) / 150 (`topo_chaos`) | from the pump scan in `characterization/05` (next section) |
+| ε (tone amplitude) | 0.6 | kept at the single ring's absolute value. Note the *relative* modulation is much weaker here (ε/F₀ = 0.06 vs 0.19 for the single ring) — the measured drop-port contrast of 10–15 % says it is still plenty |
+| N | 64 modes/ring | half the single ring's 128: the sub-threshold comb is narrow, and mode count multiplies the R² cost |
+| dt | 0.01 | the linear flow is exact at any dt; dt only controls the O(dt²) Kerr–coupling splitting error, which needs J·dt ≪ 1 (here 0.05) |
+| T_relax / T_avg | 3 / 10 (`topo`), 3 / 25 (`topo_chaos`) | relaxation rate is ~κ_in = 1, so 3 lifetimes forgets the previous symbol to e⁻³; T_avg from the noise-vs-window scan in `characterization/05` |
+
+**Why J = 5.** Three constraints pull in different directions. (i) *Topology must be resolved*:
+the α = 1/4 spectrum spans ±2√2 J and its gaps are O(J), so gaps ≫ linewidth requires J ≫ 1 —
+at J = 5 the gap is ~10 linewidths and the edge band is well separated. (ii) *Splitting error
+and cost*: the Strang error grows with J·dt, so very large J forces a smaller dt and the
+per-symbol cost grows as 1/dt. (iii) *Edge transmission*: the input→drop transfer through the
+edge channel improves with J (measured in the linear test: drop/pump power ratio 0.013 at J = 5,
+0.15 at J = 10, 0.33 at J = 15) because the edge group velocity grows and off-resonant bulk
+leakage shrinks. J = 5 is the conservative default that trains well; `--J 10` is worth trying
+for a stronger drop-port signal. For scale, fabricated silicon ring lattices sit at
+J/κ_in ~ 10–40, so J = 5–15 is the physically honest range — **not** the explorer's GUI default
+(κ_in = 0.001, J = 1, i.e. J/κ_in = 1000, deep topological but dynamically stiff: resolving it
+here would force dt ~ 10⁻⁴ and ~100× the compute for no RL benefit).
 
 ## Operating points (`REGIMES` in `microring/__init__.py`, mapped in `characterization/05`)
 

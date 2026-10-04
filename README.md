@@ -146,7 +146,7 @@ $$\partial_t a_{r,m} = \left[-(1+i\Delta) - i d_2 m^2\right] a_{r,m} - i\sum_{r'
 H is a tight-binding Hamiltonian over the ring sites — `H_IQH` (Hafezi lattice: uniform synthetic flux
 per plaquette, chiral edge states) or `H_AQH` (Haldane-type, staggered fluxes plus diagonals) — ported
 from, and cross-checked element by element against, the
-[Topological Photonic Lattice Explorer](https://github.com/lidaxu/Topological_Photonics_Nonlinear_Explorer)
+[Topological Photonic Lattice Explorer](https://github.com/lidaxu-physics/Topological_Photonics_Nonlinear_Explorer)
 (`tests/test_lattice.py`). The integrator is the same exact-flow Strang splitting: the linear + drive
 sub-flow is now a matrix exponential per longitudinal mode, built from one eigendecomposition of
 H − iκ_ex; the Kerr sub-flow stays local per ring. A 1 × 1 lattice reproduces `LLESolver` to round-off.
