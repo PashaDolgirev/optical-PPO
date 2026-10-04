@@ -7,6 +7,10 @@ SURFACE, INK, INK2, MUTED, GRID, AXIS = "#fcfcfb", "#0b0b0b", "#52514e", "#89878
 BLUE, ORANGE, AQUA, YELLOW, MAGENTA, GREEN, VIOLET, RED = (
     "#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948")
 SERIES = [BLUE, ORANGE, AQUA, YELLOW, MAGENTA, GREEN, VIOLET, RED]
+# extension slots for the lattice policies: validated in OKLab (deltaE x100 >= 15 normal,
+# >= 8 under Machado protan/deutan/tritan simulation) against every colour they are
+# co-plotted with in compare_policies and against each other
+NAVY, BROWN = "#123f5c", "#7a4f14"
 # one-hue sequential ramp (light -> dark) for magnitude
 SEQ_BLUE = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"]
 

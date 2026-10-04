@@ -5,8 +5,10 @@ Animate a trained --regime topo policy: one greedy episode next to the physics t
     python animate_topo.py --env Pendulum-v1 ...
     python animate_topo.py --env LunarLander-v3 ...
 
-Three panels, one frame per control step:
+Five panels, one frame per control step:
   left   : the episode (cart+pole / pendulum / lunar lander) and the chosen action
+  second : the training curve of this seed (static -- the replayed episode sits at the END
+           of it), with this episode's return and the frozen evaluation marked
   middle : the 4x4 Hafezi lattice, two globally comparable encodings on one mark.
            SIZE   = each ring's absolute power sum_m |a_{r,m}|^2, log scale over 3 decades:
                     the static structure (edge transport from "in" to "out").
@@ -24,6 +26,8 @@ frozen calibration statistics, and one lane of the persistent lattice state.
 """
 
 import argparse
+import json
+import os
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -193,10 +197,20 @@ def panel_lunar(ax):
 
 PANELS = {"CartPole-v1": panel_cartpole, "Pendulum-v1": panel_pendulum, "LunarLander-v3": panel_lunar}
 
+# ------------------------------------------------------------------- training curve data
+# the result json has the full log + frozen evaluation; a checkpoint of a still-running
+# seed has the log up to its last save
+res_file = f"results/ppo/{short}/mr_{args.regime}_seed{args.seed}.json"
+rlog = json.load(open(res_file)) if os.path.exists(res_file) else c["log"]
+upd = rlog["updates"]
+lc_x = np.array([u["env_steps"] for u in upd]) / 1e3
+lc_y = np.array([u["mean_return"] for u in upd], dtype=float)
+lc_eval = rlog.get("eval", {}).get("mean")
+
 # ------------------------------------------------------------------------------- figure
 frames = range(0, T, args.every)
-fig, (ax_task, ax_lat, ax_spec, ax_comb) = plt.subplots(
-    1, 4, figsize=(15.0, 3.6), gridspec_kw=dict(width_ratios=[1.35, 1.0, 1.15, 1.1]))
+fig, (ax_task, ax_lc, ax_lat, ax_spec, ax_comb) = plt.subplots(
+    1, 5, figsize=(17.2, 3.6), gridspec_kw=dict(width_ratios=[1.35, 0.85, 1.0, 1.15, 1.1]))
 kind = "chaotic topological comb" if args.regime == "topo_chaos" else "topological frequency comb"
 fig.suptitle(f"{kind.capitalize()} (4×4 Hafezi lattice) as the {short} policy",
              x=0.02, ha="left", fontsize=12, fontweight="semibold")
@@ -204,6 +218,25 @@ draw_task = PANELS[args.env](ax_task)
 ax_task.set_title("the task: greedy trained policy", fontsize=10)
 step_txt = ax_task.text(0.02, 0.97, "", transform=ax_task.transAxes, fontsize=9,
                         color=ps.INK2, va="top")
+
+# training-curve panel (static: the replayed episode sits at the end of this curve)
+ok = ~np.isnan(lc_y)
+ax_lc.plot(lc_x[ok], lc_y[ok], color=ps.BLUE, lw=1, alpha=0.35)
+if ok.sum() > 7:                                                  # rolling mean over valid updates
+    w = 7
+    smooth = np.convolve(lc_y[ok], np.ones(w) / w, mode="valid")
+    ax_lc.plot(lc_x[ok][w - 1:], smooth, color=ps.BLUE, lw=2)
+ax_lc.axhline(ret, color=ps.ORANGE, lw=1.2, ls="--")
+ax_lc.text(0.03, ret, "this episode", color=ps.ORANGE, fontsize=7, va="bottom",
+           transform=ax_lc.get_yaxis_transform())
+if lc_eval is not None:
+    ax_lc.plot([lc_x[ok][-1]], [lc_eval], marker="o", ms=7, color=ps.INK2, ls="")
+    ax_lc.annotate(f"frozen eval {lc_eval:.0f}", (lc_x[ok][-1], lc_eval), xytext=(-4, -12),
+                   textcoords="offset points", ha="right", fontsize=7, color=ps.INK2)
+ax_lc.set_xlabel("env steps (thousands)", fontsize=9)
+ax_lc.set_ylabel("mean return", fontsize=9)
+ax_lc.tick_params(labelsize=8)
+ax_lc.set_title(f"training (seed {args.seed})", fontsize=10)
 
 # lattice panel: rings coloured by the deviation of their power from the episode mean
 div_cmap = LinearSegmentedColormap.from_list("div", [ps.BLUE, ps.SURFACE, ps.RED])
@@ -258,7 +291,7 @@ ax_comb.set_xticks([-hw, -hw // 2, 0, hw // 2, hw])
 ax_comb.set_xlabel("comb line $m$", fontsize=9)
 ax_comb.set_ylabel("standardised line power $z_m$", fontsize=9)
 ax_comb.tick_params(labelsize=8)
-ax_comb.set_title(f"what the policy reads ({ring.n_features} features)", fontsize=10)
+ax_comb.set_title(f"policy features ({ring.n_features} lines)", fontsize=10)
 fig.tight_layout(rect=(0, 0, 1, 0.93))
 
 

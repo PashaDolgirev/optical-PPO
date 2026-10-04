@@ -38,8 +38,8 @@ RUNS = {"mr_chaos":   ("ring, chaotic comb (time-averaged spectrum)", ps.BLUE),
         "mr_rolls":   ("ring, Turing rolls (stationary)", ps.GREEN),
         "mr_soliton_eps0.02": ("ring, single soliton (stationary, $\\varepsilon$ = 0.012 $F_0$)", ps.VIOLET),
         "mr_soliton_eps0.02_nodet": ("ring, single soliton, noiseless detection", ps.RED),
-        "mr_topo":    ("coupled-ring lattice (topological comb, drop port)", ps.AQUA),
-        "mr_topo_chaos": ("coupled-ring lattice, chaotic comb ($F_0^2$ = 150)", ps.YELLOW)}
+        "mr_topo":    ("coupled-ring lattice (topological comb, drop port)", ps.NAVY),
+        "mr_topo_chaos": ("coupled-ring lattice, chaotic comb ($F_0^2$ = 150)", ps.BROWN)}
 PANELS = {"CartPole": [("Chaotic vs pattern-free ring vs no ring", ["mr_chaos", "mr_normal", "mr_topo", "mr_topo_chaos", "nn", "linear"]),
                        ("Ordered states of the ring", ["mr_normal", "mr_rolls", "mr_soliton_eps0.02", "mr_soliton_eps0.02_nodet"])],
           "Pendulum": [("Swing-up: a linear policy is not enough", ["mr_normal", "mr_chaos", "mr_topo", "mr_topo_chaos", "nn", "linear", "poly2"])],
