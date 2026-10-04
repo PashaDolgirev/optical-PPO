@@ -137,6 +137,12 @@ realisations, drop-port contrast vs repeat noise through the actual feature map)
 The Benettin Lyapunov estimator in `microring/diagnostics.py` was generalised to lattice-shaped
 states (norm over everything but the batch axis); single-ring behaviour is unchanged.
 
+`tests/test_lattice_regimes.py` is the lattice analogue of the single-ring regimes figure: both
+presets prepared exactly as the feature map prepares them, with hard assertions — `topo` must
+have λ_max < 0 and late-time ring powers constant to < 1 % (measured: 10⁻¹⁴, a fixed point);
+`topo_chaos` must have λ_max > 0 *and* pass the ergodicity check; both must keep ≥ 85 % of the
+mean power on the boundary rings. Figure: `tests/lattice_regimes.png`.
+
 ## Experiments and first results
 
 `run_experiments.sh` gained three lanes — `topo` (CartPole, 3 seeds), `topo2` (Pendulum +

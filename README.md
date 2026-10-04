@@ -166,6 +166,8 @@ single-ring operating point (`auto_detuning`). Two presets (`characterization/05
   (λ_max = +0.44, ergodic), contrast ~15 % against ~1.3 % chaos noise at T_avg = 25 — the lattice
   analogue of the `chaos` regime. By F0² = 200 ergodicity breaks and the contrast washes out.
 
+![The two lattice operating regimes](tests/lattice_regimes.png)
+
 ## PPO
 
 Standard clipped-ratio PPO (GAE λ = 0.95, frozen per-buffer targets, critic fitted first, 20 full-batch
