@@ -13,7 +13,10 @@ Three panels, one frame per control step:
            COLOUR = the ring's power deviation from its episode mean, in percent, on ONE
                     shared diverging scale for every ring: the input-driven modulation.
            "in" = pump/tone ring, "out" = drop-port ring the policy reads.
-  right  : the policy's entire view of the world -- the drop-port lines as the
+  third  : the faithful OSA view -- the full drop-port comb spectrum <|a_m|^2> (all N lines,
+           dB re the episode maximum, time-averaged over the symbol exactly as detection
+           does), with the policy's readout window |m| <= hw shaded
+  right  : the policy's entire view of the world -- the detected lines as the
            standardised features z = (|a_m|^2 - mean)/std that feed the linear readout
 
 Uses the checkpoint of a finished (or running) mr_topo run: the trained readout with its
@@ -68,16 +71,23 @@ print(f"{args.env} checkpoint seed {args.seed} (update {c['update'] + 1}), "
       f"{ring.n_features} drop-port lines, {env.action_space.n} actions")
 
 # ------------------------------------------------------------------------- greedy episode
+# One symbol = exactly LatticeChaoticFeatureMap.__call__, unrolled so that the full
+# time-averaged drop-port spectrum (not just the detected lines) can be recorded.
 obs, _ = env.reset(seed=args.ep_seed)
-states, powers, combs, acts, ret = [], [], [], [], 0.0
+states, powers, combs, specs, acts, ret = [], [], [], [], [], 0.0
 done = False
 with torch.no_grad():
     while not done and len(states) < MAX_STEPS[args.env]:
-        feat = ring(obs[None, :])
+        ring.solver.set_drive(ring.F0, ring.encode(obs[None, :]))
+        ring.a, _ = ring.solver.evolve(ring.a, ring.n_relax)
+        ring.a, (mI, mA) = ring.solver.evolve(ring.a, ring.n_avg, accumulate=True,
+                                              sample_every=ring.sample_every, with_field=True)
+        feat = torch.cat([ring.detect(mI[:, s], mA[:, s]) for s in ring.readout_sites], 1)
         act = int(policy(feat).argmax(-1))
         states.append(obs.copy())
         powers.append((ring.a[0].abs() ** 2).sum(-1).numpy())     # (R,) per-ring power
-        combs.append(feat[0].numpy())                             # drop-port lines
+        combs.append(feat[0].numpy())                             # detected drop-port lines
+        specs.append(ring.solver.shifted(mI[0, drop]).numpy())    # (N,) full OSA spectrum
         acts.append(act)
         obs, rew, term, trunc, _ = env.step(act)
         ret += rew
@@ -85,7 +95,7 @@ with torch.no_grad():
 env.close()
 T = len(states)
 print(f"episode: {T} steps, return {ret:.1f}")
-states, powers, combs = np.array(states), np.array(powers), np.array(combs)
+states, powers, combs, specs = np.array(states), np.array(powers), np.array(combs), np.array(specs)
 
 
 # ------------------------------------------------------------------ task panels (left axis)
@@ -185,8 +195,8 @@ PANELS = {"CartPole-v1": panel_cartpole, "Pendulum-v1": panel_pendulum, "LunarLa
 
 # ------------------------------------------------------------------------------- figure
 frames = range(0, T, args.every)
-fig, (ax_task, ax_lat, ax_comb) = plt.subplots(
-    1, 3, figsize=(11.5, 3.6), gridspec_kw=dict(width_ratios=[1.35, 1.0, 1.1]))
+fig, (ax_task, ax_lat, ax_spec, ax_comb) = plt.subplots(
+    1, 4, figsize=(15.0, 3.6), gridspec_kw=dict(width_ratios=[1.35, 1.0, 1.15, 1.1]))
 kind = "chaotic topological comb" if args.regime == "topo_chaos" else "topological frequency comb"
 fig.suptitle(f"{kind.capitalize()} (4×4 Hafezi lattice) as the {short} policy",
              x=0.02, ha="left", fontsize=12, fontweight="semibold")
@@ -224,6 +234,19 @@ cb = fig.colorbar(dots, ax=ax_lat, fraction=0.045, pad=0.02,
 cb.ax.tick_params(labelsize=7)
 cb.outline.set_visible(False)
 
+# spectrum panel: the faithful OSA view of the drop-port comb (all N lines, dB)
+m_all = ring.solver.modes_shifted
+FLOOR = -80.0
+dB = 10 * np.log10(np.clip(specs / specs.max(), 10 ** (FLOOR / 10), None))
+spec_bars = ax_spec.bar(m_all, dB[0] - FLOOR, bottom=FLOOR, width=0.8, color=ps.BLUE, zorder=3)
+ax_spec.axvspan(-hw - 0.5, hw + 0.5, color=ps.GRID, alpha=0.6, zorder=0)
+ax_spec.text(0, 1.6, "read out", ha="center", va="bottom", fontsize=7, color=ps.INK2, zorder=4)
+ax_spec.set_ylim(FLOOR, 4); ax_spec.set_xlim(m_all[0] - 1, m_all[-1] + 1)
+ax_spec.set_xlabel("comb line $m$", fontsize=9)
+ax_spec.set_ylabel("$\\langle|a_m|^2\\rangle$ (dB re episode max)", fontsize=9)
+ax_spec.tick_params(labelsize=8)
+ax_spec.set_title("drop-port comb spectrum", fontsize=10)
+
 # comb panel: the standardised drop-port lines the linear readout consumes
 m_ax = np.arange(-hw, hw + 1)
 z = ((torch.as_tensor(combs) - policy.mean) / policy.std).numpy()
@@ -243,6 +266,8 @@ def draw(i):
     label = draw_task(i)
     step_txt.set_text(f"step {i + 1}/{T}   {label}")
     dots.set_array(dev[i])
+    for b, h in zip(spec_bars, dB[i]):
+        b.set_height(h - FLOOR)
     for b, h in zip(bars, z[i]):
         b.set_height(h)
     return []
