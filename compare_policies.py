@@ -42,8 +42,8 @@ RUNS = {"mr_chaos":   ("ring, chaotic comb (time-averaged spectrum)", ps.BLUE),
         "mr_topo_chaos": ("coupled-ring lattice, chaotic comb ($F_0^2$ = 150)", ps.YELLOW)}
 PANELS = {"CartPole": [("Chaotic vs pattern-free ring vs no ring", ["mr_chaos", "mr_normal", "mr_topo", "mr_topo_chaos", "nn", "linear"]),
                        ("Ordered states of the ring", ["mr_normal", "mr_rolls", "mr_soliton_eps0.02", "mr_soliton_eps0.02_nodet"])],
-          "Pendulum": [("Swing-up: a linear policy is not enough", ["mr_normal", "mr_chaos", "mr_topo", "nn", "linear", "poly2"])],
-          "LunarLander": [("LunarLander: 8 inputs, 4 actions", ["mr_normal", "mr_chaos", "mr_topo", "nn", "linear", "poly2"])]}
+          "Pendulum": [("Swing-up: a linear policy is not enough", ["mr_normal", "mr_chaos", "mr_topo", "mr_topo_chaos", "nn", "linear", "poly2"])],
+          "LunarLander": [("LunarLander: 8 inputs, 4 actions", ["mr_normal", "mr_chaos", "mr_topo", "mr_topo_chaos", "nn", "linear", "poly2"])]}
 BEST = {"CartPole": 500, "Pendulum": None, "LunarLander": None}
 
 
