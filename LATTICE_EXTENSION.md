@@ -140,6 +140,14 @@ spreads over all boundary rings: at F₀² = 100 the pump line carries 1.1 per r
 lattice but 0.29 on AQH 12 × 12 and less on zigzag 6 × 6, where the mixing products are then four
 orders below the tone lines.
 
+![The mini-comb drive for LunarLander on the zigzag 6 × 6 lattice](results/characterization/05_mini_comb_drive_zigzag.png)
+
+The drive used for LunarLander on zigzag 6 × 6 at J = 40, drawn like the figure of the preset: the
+ten edge supermodes are σ = 25…34 (red ticks). The pump sits on σ = 26, the second of them, and the
+eight tones on σ = 27…34, i.e. n = +1…+8 — all inputs on one side of the pump, as in the single
+ring. δ = 5.41, and the tones miss their supermodes by 0.05–0.35. The tenth edge supermode (σ = 25,
+at n = −1) is not driven, and beyond n = +8 the lines fall between bulk supermodes.
+
 ## The preset (`REGIMES["topo"]` in `microring/__init__.py`)
 
 | parameter | value | why |
@@ -179,55 +187,33 @@ on the boundary rings.
 
 **1. Is one longitudinal mode per ring enough?** The claim is that below the comb threshold the
 light never leaves the pump's longitudinal mode, so that the other modes need not be simulated.
-
-* *Physics.* In a 64-mode simulation of the preset, the power outside m = 0 is exactly zero after
-  the warm-up, and the features computed with 1 and with 8 modes per ring agree to better than
-  1e−3 (test 7). The reason: pump and tones are all on m = 0, and four-wave mixing among them
-  conserves m; the only way out is modulational instability, which the pump is kept below.
-* *Training.* The Pendulum run repeated with 64 modes per ring (same seed, otherwise identical) is
-  in progress. Up to its 25th update it follows the single-mode run — returns −1180 and −1008
-  against −1186 and −1049 at updates 13 and 25 — at six times the cost (137 s per update against
-  23 s). The final evaluation will be added here.
-
-So far: yes. The single mode is not an approximation below threshold; it is what the dynamics does.
+In a 64-mode simulation of the preset, the power outside m = 0 is exactly zero after the warm-up,
+and the features computed with 1 and with 8 modes per ring agree to better than 1e−3 (test 7). The
+reason: pump and tones are all on m = 0, and four-wave mixing among them conserves m; the only way
+out is modulational instability, which the pump is kept below. So the single mode is not an
+approximation below threshold; it is what the dynamics does. (A full training with 64 modes per
+ring is running as a check; it will be added when it has finished.)
 
 **2. Must every line be read, or do the lines of the edge supermodes suffice?** `edge` reads the
-lines at the drive frequencies (solid in the figure above), `all` every line n δ in the band of H.
+lines at the drive frequencies (solid in the figures above), `all` every line n δ in the band of H.
 
-| task, lattice | `edge` | `all` | status |
-|---|---|---|---|
-| Pendulum, AQH 4 × 4 | **−249 ± 175** (4 lines) | −374 ± 469 (14 lines) | frozen evaluation, 1 seed |
-| LunarLander, zigzag 6 × 6 | ≈ +220 (9 lines) | ≈ +265 (66 lines) | training return at update 85 of 400, 5–10 episodes each |
+![Which lines must be read](results/characterization/06_two_questions.png)
 
-![Which lines must be read, and how many longitudinal modes simulated](results/characterization/06_two_questions.png)
+(`characterization/06_two_questions.py` redraws the figure from the result files of finished runs.)
 
-(`characterization/06_two_questions.py` redraws the figure from the run files, and from the
-checkpoints of runs still in progress.)
-
-On the pendulum (top row) the four edge lines suffice: that policy learns faster (top left) and
-never fails — its worst evaluation episode is −638. The policy that reads all 14 lines is not
-simply worse, though (top middle). In 55 of its 64 evaluation episodes it is the better one
-(median −135 against −241), and in the other 9 it never swings up (about −1500), which is what
-pulls its mean to −374. The ten extra lines carry 10⁻⁶ and less (top right), three to four orders
+On the pendulum (AQH 4 × 4) the four edge lines suffice: that policy learns faster (left) and never
+fails — frozen evaluation −249 ± 175, worst episode −638. The policy that reads all 14 lines
+(−374 ± 469) is not simply worse, though (middle). In 55 of its 64 evaluation episodes it is the
+better one (median −135 against −241), and in the other 9 it never swings up (about −1500), which
+is what pulls its mean down. The ten extra lines carry 10⁻⁶ and less (right), three to four orders
 below the tone lines: after standardisation they give the readout more to fit and, from some
 initial conditions, more to go wrong with. One seed each, so the ranking of the means is not
 settled; that four lines are enough to solve the task is.
 
-On LunarLander (bottom left) both variants already land — a return above 200 counts as solved —
-after a fifth of the training, with no clear difference between them; these are noisy training
-returns, not evaluations. That lattice differs in a way that matters for this question (bottom
-middle): it has ten edge supermodes of which nine are driven, and the lines just outside the driven
-ones sit near further supermodes, so four-wave mixing fills them resonantly to 10⁻² – 10⁻³ of the
-pump line, as strong as the tone lines themselves. There the extra lines are signal, not noise;
-whether they help is what the two finished runs will show.
-
-The bottom right panel is question 1: the 64-mode run on top of the single-mode one, as far as it
-has got.
-
 What `edge` sufficing does and does not mean: the edge lines sit at the drive frequencies and
 contain the linearly transmitted tones as well as the mixing products. `--mini_comb bulk`, which
 reads only lines that four-wave mixing fills, is the control that separates the two; it has not
-been run yet.
+been run yet. The same comparison on LunarLander (zigzag 6 × 6, 9 lines against 66) is running.
 
 `python animate_mini.py --env Pendulum-v1 --tag mini4_edge` replays one greedy episode from a
 training checkpoint: the task, the training curve, the lattice, the linear drop spectrum of the
