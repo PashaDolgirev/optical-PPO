@@ -168,7 +168,8 @@ Pendulum on the preset, one seed, frozen greedy evaluation over 64 episodes:
 For comparison: a linear policy reaches −718…−1038, the best single-ring regime −196…−252. So the
 mini-comb computes — the swing-up is out of reach of a linear readout of the inputs — and the four
 lines of the driven edge supermodes suffice; the ten further lines are 10⁻⁶ and below (three to four
-orders under the tone lines) and add noise rather than information. Two cautions. This is one seed.
+orders under the tone lines), and the policy that reads them fails outright in 9 of 64 episodes
+while doing better in the others (see the two questions below). Two cautions. This is one seed.
 And the four `edge` lines sit at the drive frequencies, so they contain the linearly transmitted
 tones as well as the mixing products: that they suffice does not by itself show where the
 computation happens. In the simulation 99.5 % of the light is in the four edge supermodes and 99.9 %
@@ -198,14 +199,30 @@ lines at the drive frequencies (solid in the figure above), `all` every line n �
 | Pendulum, AQH 4 × 4 | **−249 ± 175** (4 lines) | −374 ± 469 (14 lines) | frozen evaluation, 1 seed |
 | LunarLander, zigzag 6 × 6 | ≈ +220 (9 lines) | ≈ +265 (66 lines) | training return at update 85 of 400, 5–10 episodes each |
 
-On the pendulum the answer is in: the four edge lines suffice and the ten others hurt — they are
-10⁻⁶ and below, noise after standardisation, and they cost the policy its worst episodes (−1508
-against −638). On LunarLander both variants already land (a return above 200 counts as solved)
-after a fifth of the training, with no clear difference yet between them; these are noisy training
-returns, not evaluations. That lattice differs in a way that matters for this question: it has ten
-edge supermodes and only nine are driven, and its lines n > 8 and n < 0 fall near further edge and
-bulk supermodes, so four-wave mixing can fill them resonantly. Whether that makes the extra lines
-useful there is what the two finished runs will show.
+![Which lines must be read, and how many longitudinal modes simulated](results/characterization/06_two_questions.png)
+
+(`characterization/06_two_questions.py` redraws the figure from the run files, and from the
+checkpoints of runs still in progress.)
+
+On the pendulum (top row) the four edge lines suffice: that policy learns faster (top left) and
+never fails — its worst evaluation episode is −638. The policy that reads all 14 lines is not
+simply worse, though (top middle). In 55 of its 64 evaluation episodes it is the better one
+(median −135 against −241), and in the other 9 it never swings up (about −1500), which is what
+pulls its mean to −374. The ten extra lines carry 10⁻⁶ and less (top right), three to four orders
+below the tone lines: after standardisation they give the readout more to fit and, from some
+initial conditions, more to go wrong with. One seed each, so the ranking of the means is not
+settled; that four lines are enough to solve the task is.
+
+On LunarLander (bottom left) both variants already land — a return above 200 counts as solved —
+after a fifth of the training, with no clear difference between them; these are noisy training
+returns, not evaluations. That lattice differs in a way that matters for this question (bottom
+middle): it has ten edge supermodes of which nine are driven, and the lines just outside the driven
+ones sit near further supermodes, so four-wave mixing fills them resonantly to 10⁻² – 10⁻³ of the
+pump line, as strong as the tone lines themselves. There the extra lines are signal, not noise;
+whether they help is what the two finished runs will show.
+
+The bottom right panel is question 1: the 64-mode run on top of the single-mode one, as far as it
+has got.
 
 What `edge` sufficing does and does not mean: the edge lines sit at the drive frequencies and
 contain the linearly transmitted tones as well as the mixing products. `--mini_comb bulk`, which
