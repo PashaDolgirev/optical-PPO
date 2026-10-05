@@ -46,10 +46,38 @@ ring:
 
 $$F_{r,m}(t) = \delta_{r,\mathrm{in}}\delta_{m,0}\left[F_0 + \sum_k \varepsilon(1+\tilde s_k)e^{-i n_k\delta t}\right]$$
 
-with n_k = σ_k − σ_p and δ the **mini FSR**: the least-squares spacing of those supermodes
-(δ = Σ n_k Ω_k / Σ n_k², Ω_k = λ_σk − λ_σp). This is the equidistant drive of the single ring with
-the FSR replaced by δ. σ is the index of a supermode in ascending eigenvalue (`supermode_table()`
-lists eigenvalue, boundary weight and port overlaps). By default the pump takes the edge supermode
+with n_k = σ_k − σ_p and δ the **mini FSR**. This is the equidistant drive of the single ring with
+the FSR replaced by δ.
+
+![The mini-comb drive on the drop spectrum of one longitudinal mode](results/characterization/05_mini_comb_drive.png)
+
+The figure (`characterization/05_mini_comb_drive.py`) shows every quantity of this formula for the
+preset, on the linear drop spectrum of the pump's longitudinal mode — the transmission from the
+input ring to the drop ring of a weak probe at frequency ω from the pump,
+|[(1 + i(Δ − ω)) + κ_ex + iH]⁻¹|² taken between those two rings:
+
+1. **Supermodes σ, eigenvalues λ_σ.** Diagonalise H; σ numbers its eigenvalues in ascending order
+   (`supermode_table()` also lists boundary weight and port overlaps). Supermode σ is resonant at
+   ω = Δ + λ_σ: these are the peaks. The four in the figure are the edge supermodes σ = 6, 7, 8, 9
+   of the AQH 4 × 4 lattice, λ = −16.53, −5.29, +5.29, +16.53 at J = 20.
+2. **Pump supermode σ_p and detuning Δ.** σ_p is the edge supermode the input ring couples to best
+   (here σ_p = 7; `--pump_sigma` overrides). Δ is then set so that this supermode sits at
+   Δ_eff = Δ + λ_σp = 1.76: the pump (orange, ω = 0) is 1.76 half-linewidths to the red of its
+   peak. Here Δ = 1.76 + 5.29 = 7.05.
+3. **Tone supermodes σ_k and rungs n_k = σ_k − σ_p.** One of the remaining edge supermodes per
+   input (here 6, 8, 9, so n = −1, +1, +2; `--tone_sigma` overrides). Their exact distances from
+   the pump's supermode are Ω_k = λ_σk − λ_σp = −11.23, +10.59, +21.82.
+4. **Mini FSR δ.** The Ω_k are only nearly multiples of one spacing. δ is the spacing that fits
+   them best in the least-squares sense with the pump as rung 0, δ = Σ n_k Ω_k / Σ n_k²
+   = (11.23 + 10.59 + 2 × 21.82) / 6 = 10.91. The tones (blue) are driven at n_k δ = −10.91, +10.91,
+   +21.82, not at Ω_k: they miss their supermodes by |n_k δ − Ω_k| = 0.32, 0.32 and 0.00, a quarter
+   of the loaded half-linewidth (1.2–1.3). Like the pump, each then sits about 1.76 to the red of
+   its peak.
+5. **Amplitudes.** F₀ is the pump amplitude; tone k has amplitude ε(1 + s̃_k), where s̃_k in [−1, 1]
+   is the squashed k-th observation. All of them enter the input ring only (δ_{r,in}) and the
+   longitudinal mode m = 0 only (δ_{m,0}).
+
+By default the pump takes the edge supermode
 the input corner couples to best (`--pump_sigma` overrides it) and the tones the neighbouring edge
 supermodes that are most evenly spaced (`--tone_sigma`); supermodes that are not close to
 equidistant — a tone more than 1 off its supermode — are refused. The pump's supermode is placed at

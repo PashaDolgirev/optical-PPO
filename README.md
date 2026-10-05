@@ -213,7 +213,7 @@ python characterization/01_operating_point.py                # 02…04 likewise;
 | `microring/__init__.py` | the regimes (`REGIMES`), per-task observation scaling (`TASKS`), `make_ring()` |
 | `microring/diagnostics.py` | Lyapunov exponent, split-half SNR, linear decodability, variance decomposition |
 | `PPO_MR.py` | PPO; `--policy mr, linear, poly2, nn`; `--regime chaos, normal, rolls, soliton, topo`; `--env`; `--resume` |
-| `characterization/01…04` | why this operating point, this tone strength, this averaging window; the ordered states |
+| `characterization/01…05` | why this operating point, this tone strength, this averaging window; the ordered states; the mini-comb drive on the drop spectrum of the lattice |
 | `tests/` | port vs the original JAX solver; steady-state, regime and symmetry checks |
 | `run_experiments.sh`, `summarize_results.py`, `compare_policies.py` | the exact published runs, the tables, the figures |
 
