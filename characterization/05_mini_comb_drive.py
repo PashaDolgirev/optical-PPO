@@ -44,19 +44,21 @@ ax.plot(w, T, color=ps.INK2, lw=1.6)
 ax.set_yscale("log"); ax.set_ylim(T.min() * 0.5, T.max() * 60)
 top = T.max()
 for s in (6, 7, 8, 9):
-    ax.annotate(f"supermode σ = {s}\nλ = {lam[s]:+.2f}", (peak(s), T[np.abs(w - peak(s)).argmin()]), xytext=(0, 9), textcoords="offset points",
-                ha="center", fontsize=8, color=ps.INK2)
+    ax.annotate(f"supermode σ = {s}\nλ = {lam[s]:+.2f}", (peak(s), T[np.abs(w - peak(s)).argmin()]), xytext=(4, 5), textcoords="offset points",
+                ha="left", fontsize=8, color=ps.INK2)       # every label sits beside its line or peak, never across one
 for k, col, lab in [(0, ps.ORANGE, "pump  F₀\nn = 0")] + [(int(m), ps.BLUE, f"tone  ε(1+s̃)\nn = {int(m):+d}") for m in n]:
     ax.axvline(k * delta, color=col, lw=2, alpha=0.85)
-    ax.text(k * delta, top * 30, lab, color=col, ha="center", va="top", fontsize=8.5)
+    ax.text(k * delta + 0.5, top * 30, lab, color=col, ha="left", va="top", fontsize=8.5)
 y = T.min() * 1.6                                           # the mini FSR between the pump and tone n = +1
 ax.annotate("", (delta, y), (0, y), arrowprops=dict(arrowstyle="<->", color=ps.INK2, lw=1.2))
 ax.text(delta / 2, y * 1.25, f"mini FSR  δ = {delta:.2f}", ha="center", fontsize=9, color=ps.INK2)
-y = T.max() * 0.25                                          # the pump sits `target` below its supermode
+y = top * 6                                                 # the pump sits `target` below its supermode
 ax.annotate("", (peak(sp), y), (0, y), arrowprops=dict(arrowstyle="<->", color=ps.ORANGE, lw=1.2))
-ax.text(peak(sp) + 0.4, y, f"Δ_eff = {target}", ha="left", va="center", fontsize=8.5, color=ps.ORANGE)
+ax.text(peak(sp) + 0.5, y, f"Δ_eff = {target}", ha="left", va="center", fontsize=8.5, color=ps.ORANGE)
 for m, s in zip(n, tones):                                  # the tones: `target` below their supermodes, up to the fit error
-    ax.text(m * delta, T.min() * 4.5, f"{abs(m * delta - (lam[s] - lam_p)):.2f} from\nΩ = {lam[s] - lam_p:+.2f}", ha="center", fontsize=7.5, color=ps.BLUE)
+    right = m != n.max()
+    ax.text(m * delta + (0.5 if right else -0.5), T.min() * 4.5, f"{abs(m * delta - (lam[s] - lam_p)):.2f} from\nΩ = {lam[s] - lam_p:+.2f}",
+            ha="left" if right else "right", fontsize=7.5, color=ps.BLUE)
 ax.set_xlabel("frequency from the pump, in intrinsic half-linewidths"); ax.set_ylabel("linear transmission, input ring → drop ring")
 ax.set_title(f"Drop spectrum of one longitudinal mode (AQH {nx}×{ny}, J = {J:g}) and the mini-comb drive", fontsize=11, loc="left")
 fig.tight_layout()
