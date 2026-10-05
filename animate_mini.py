@@ -97,7 +97,11 @@ rlog = json.load(open(res_file)) if os.path.exists(res_file) else c["log"]
 lc_x = np.array([u["env_steps"] for u in rlog["updates"]]) / 1e3
 lc_y = np.array([u["mean_return"] for u in rlog["updates"]], dtype=float)
 ok = ~np.isnan(lc_y)
-ax_lc.plot(lc_x[ok], lc_y[ok], color=ps.BLUE, lw=1.6, marker="o", ms=3)
+if ok.sum() > 120:                                          # many noisy updates: the raw curve faint, a running mean on top
+    ax_lc.plot(lc_x[ok], lc_y[ok], color=ps.BLUE, lw=0.6, alpha=0.3)
+    ax_lc.plot(lc_x[ok][7:-7], np.convolve(lc_y[ok], np.ones(15) / 15, mode="valid"), color=ps.BLUE, lw=1.8)
+else:
+    ax_lc.plot(lc_x[ok], lc_y[ok], color=ps.BLUE, lw=1.6, marker="o", ms=3)
 ax_lc.axhline(ret, color=ps.ORANGE, lw=1.2, ls="--")
 ax_lc.text(0.03, ret, "this episode", color=ps.ORANGE, fontsize=7, va="bottom", transform=ax_lc.get_yaxis_transform())
 lc_eval = rlog.get("eval", {}).get("mean")
@@ -117,8 +121,12 @@ P_res = np.abs((V_r[drop][None, :] / ((1.0 + 1j * (ring.solver.Delta - w_ax[:, N
 ax_res.plot(w_ax, P_res, color=ps.INK2, lw=1.4)
 for n in rungs:
     ax_res.axvline(n * delta, color=ps.ORANGE if n == 0 else ps.BLUE, lw=1.6, alpha=0.8)
-    ax_res.text(n * delta, 1.02, "pump" if n == 0 else f"tone n={n:+d}", transform=ax_res.get_xaxis_transform(), ha="center", fontsize=7,
-                color=ps.ORANGE if n == 0 else ps.BLUE)
+    if n == 0 or len(rungs) <= 5:                             # few tones: one label each
+        ax_res.text(n * delta, 1.02, "pump" if n == 0 else f"n={n:+d}", transform=ax_res.get_xaxis_transform(), ha="center", fontsize=7,
+                    color=ps.ORANGE if n == 0 else ps.BLUE)
+if len(rungs) > 5:
+    ax_res.text(np.mean(rungs[1:]) * delta, 1.02, f"{len(rungs) - 1} tones, n = {min(rungs[1:]):+d} … {max(rungs[1:]):+d}", transform=ax_res.get_xaxis_transform(),
+                ha="center", fontsize=7, color=ps.BLUE)
 ax_res.set_yscale("log"); ax_res.set_xlabel("frequency from the pump (half-linewidths)", fontsize=9)
 ax_res.set_ylabel("linear drop transmission", fontsize=9); ax_res.tick_params(labelsize=8)
 ax_res.set_title("drop spectrum of the mode and the drive lines", fontsize=10, pad=14)
@@ -214,7 +222,7 @@ if chaos:
 cursor = ax_share.axvline(0, color=ps.INK2, lw=1)
 ax_share.set_ylim(min(100 * share_mode.min(), 100 * share_ring.min(), 100 * share_m0.min() if chaos else 100) - 2, 100.5)
 ax_share.set_xlabel("control step", fontsize=9); ax_share.set_ylabel("share of the light (%)", fontsize=9)
-ax_share.tick_params(labelsize=8); ax_share.legend(fontsize=8, frameon=False, loc="lower right")
+ax_share.tick_params(labelsize=8); ax_share.legend(fontsize=8, frameon=False, loc="center right")
 ax_share.set_title("where the light is", fontsize=10)
 fig.tight_layout(rect=(0, 0, 1, 0.95))
 
