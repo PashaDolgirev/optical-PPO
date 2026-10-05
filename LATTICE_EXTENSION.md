@@ -54,7 +54,10 @@ the FSR replaced by δ.
 The figure (`characterization/05_mini_comb_drive.py`) shows every quantity of this formula for the
 preset, on the linear drop spectrum of the pump's longitudinal mode — the transmission from the
 input ring to the drop ring of a weak probe at frequency ω from the pump,
-|[(1 + i(Δ − ω)) + κ_ex + iH]⁻¹|² taken between those two rings:
+|[(1 + i(Δ − ω)) + κ_ex + iH]⁻¹|² taken between those two rings. The ticks at the bottom mark where
+each of the 16 supermodes is resonant (red: edge supermodes, ≥ 85 % of their weight on the boundary
+rings; grey: bulk). The top axis counts the fine lines n δ that can be read: the solid ones are
+driven, the dotted ones can only be filled by four-wave mixing.
 
 1. **Supermodes σ, eigenvalues λ_σ.** Diagonalise H; σ numbers its eigenvalues in ascending order
    (`supermode_table()` also lists boundary weight and port overlaps). Supermode σ is resonant at
@@ -170,6 +173,44 @@ And the four `edge` lines sit at the drive frequencies, so they contain the line
 tones as well as the mixing products: that they suffice does not by itself show where the
 computation happens. In the simulation 99.5 % of the light is in the four edge supermodes and 99.9 %
 on the boundary rings.
+
+## Two questions the runs are meant to answer
+
+**1. Is one longitudinal mode per ring enough?** The claim is that below the comb threshold the
+light never leaves the pump's longitudinal mode, so that the other modes need not be simulated.
+
+* *Physics.* In a 64-mode simulation of the preset, the power outside m = 0 is exactly zero after
+  the warm-up, and the features computed with 1 and with 8 modes per ring agree to better than
+  1e−3 (test 7). The reason: pump and tones are all on m = 0, and four-wave mixing among them
+  conserves m; the only way out is modulational instability, which the pump is kept below.
+* *Training.* The Pendulum run repeated with 64 modes per ring (same seed, otherwise identical) is
+  in progress. Up to its 25th update it follows the single-mode run — returns −1180 and −1008
+  against −1186 and −1049 at updates 13 and 25 — at six times the cost (137 s per update against
+  23 s). The final evaluation will be added here.
+
+So far: yes. The single mode is not an approximation below threshold; it is what the dynamics does.
+
+**2. Must every line be read, or do the lines of the edge supermodes suffice?** `edge` reads the
+lines at the drive frequencies (solid in the figure above), `all` every line n δ in the band of H.
+
+| task, lattice | `edge` | `all` | status |
+|---|---|---|---|
+| Pendulum, AQH 4 × 4 | **−249 ± 175** (4 lines) | −374 ± 469 (14 lines) | frozen evaluation, 1 seed |
+| LunarLander, zigzag 6 × 6 | ≈ +220 (9 lines) | ≈ +265 (66 lines) | training return at update 85 of 400, 5–10 episodes each |
+
+On the pendulum the answer is in: the four edge lines suffice and the ten others hurt — they are
+10⁻⁶ and below, noise after standardisation, and they cost the policy its worst episodes (−1508
+against −638). On LunarLander both variants already land (a return above 200 counts as solved)
+after a fifth of the training, with no clear difference yet between them; these are noisy training
+returns, not evaluations. That lattice differs in a way that matters for this question: it has ten
+edge supermodes and only nine are driven, and its lines n > 8 and n < 0 fall near further edge and
+bulk supermodes, so four-wave mixing can fill them resonantly. Whether that makes the extra lines
+useful there is what the two finished runs will show.
+
+What `edge` sufficing does and does not mean: the edge lines sit at the drive frequencies and
+contain the linearly transmitted tones as well as the mixing products. `--mini_comb bulk`, which
+reads only lines that four-wave mixing fills, is the control that separates the two; it has not
+been run yet.
 
 `python animate_mini.py --env Pendulum-v1 --tag mini4_edge` replays one greedy episode from a
 training checkpoint: the task, the training curve, the lattice, the linear drop spectrum of the
