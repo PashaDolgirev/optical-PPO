@@ -34,7 +34,7 @@ is then reflection symmetric and pins the pattern.
 import numpy as np
 import torch
 from .lle_torch import LLESolver, cw_intracavity_power
-from .lattice import CoupledLLESolver, slow_beat
+from .lattice import CoupledLLESolver
 
 
 class _RingBase:
@@ -136,35 +136,26 @@ class LatticeChaoticFeatureMap(_RingBase):
     (1, 2 or 3 depending on `observable`). Every ring in {pump, drive} + readout_sites carries
     a bus coupler and the corresponding extra loss `kex`.
 
-    tone_freqs: frequency of every tone relative to the pump's grid, one per input (see
-    lattice.py). None keeps all tones on the pump's supermode; lambda_sigma - lambda_pump puts
-    tone k on the supermode sigma of its longitudinal mode instead (with two_sided the -m copy
-    gets the same frequency: both sit on sigma and the drive stays reflection symmetric). The
-    translation-symmetry argument above then tightens. The carriers exp(-i Omega_k t) add time
-    translation to the symmetries, so the time-averaged spectrum is blind to the phase theta_k
-    of a tone except through combinations sum_k n_k theta_k with sum_k n_k Omega_k = 0 and
-    sum_k n_k m_k = 0 (generic frequencies have none; the symmetric edge quartet of the AQH
-    lattice has one, theta_1 - theta_2 - theta_3 + theta_4). A signed encoding would keep at
-    most such a product of the signs, so the offset encoding is mandatory; field detection
-    restores the sign only of a tone left on the grid (the time average of a line rotating at
-    Omega_k vanishes once |Omega_k| T_avg >> 1). `slow_beat` is the slowest low-order beat of
-    the line powers (None if nothing beats): T_avg should span a whole number of its periods.
+    fine = dict(delta, rungs, lines): the mini-comb INSIDE the pump's longitudinal mode (make_ring(tone_sigma=...)).
+    Every tone then sits on m = 0, rungs[k] * delta away from the pump, delta being the "mini FSR" fitted to the
+    supermodes: the drive is an equidistant comb inside the mode, periodic in time. Detected are the powers of the
+    lines n * delta, n in `lines`, of the field a_{r,0}(t) of the readout ring(s) alone, separated by a Fourier
+    transform over the averaging window (what a heterodyne measurement of the drop port gives). delta is rounded so
+    that one period 2 pi / delta is a whole number of samples and the window a whole number of periods: the lines
+    are then exactly orthogonal on the sample grid, and a held input gives the same features at every call. The
+    offset encoding is mandatory here, too: the line powers see the phases of the tones only through combinations
+    with sum_k n_k rungs_k = 0. `clock` is the solver time, part of the state of the lattice.
     """
 
     def __init__(self, n_envs, obs_scale, H, F0=np.sqrt(10.0), eps=0.6, drive_modes=None, two_sided=False,
                  encoding="offset", squash="tanh", observable="intensity",
                  T_relax=3.0, T_avg=25.0, T_warmup=100.0, sample_dt=0.05,
                  N=64, dt=0.01, Delta=1.76, d2=0.0125, feature_modes=None,
-                 pump_site=0, drive_site=None, readout_sites=(0,), kex=1.0, tone_freqs=None, fine=None,
+                 pump_site=0, drive_site=None, readout_sites=(0,), kex=1.0, fine=None,
                  dtype=torch.complex64, device="cpu", seed=0):
-        # fine = dict(delta, rungs, lines): the mini-comb INSIDE the pump's longitudinal mode. Every tone sits on m = 0,
-        # rungs[k] * delta away from the pump (delta: the "mini FSR" fitted to the supermodes); detected are the powers of
-        # the lines n * delta, n in `lines`, of a_{r,0}(t) at the readout ring(s), separated by a Fourier transform over
-        # the averaging window. delta is rounded so that one period 2 pi / delta is a whole number of samples and the
-        # window a whole number of periods: the lines are then exactly orthogonal on the sample grid.
-        self.fine = fine
+        self.fine, tone_freqs = fine, None
         if fine is not None:
-            assert tone_freqs is None and not two_sided and observable == "intensity" and drive_modes is None
+            assert not two_sided and observable == "intensity" and drive_modes is None, "mini-comb: one-sided, line powers"
             self.sample_every = max(1, int(round(min(sample_dt, 0.025) / dt)))
             self.n_period = max(4, int(round(2 * np.pi / (fine["delta"] * dt * self.sample_every))))     # samples per period
             self.fine_delta = 2 * np.pi / (self.n_period * self.sample_every * dt)
@@ -178,10 +169,6 @@ class LatticeChaoticFeatureMap(_RingBase):
         self.n_features = len(self.readout_sites) * (self.n_features if fine is None else len(self.fine_lines))
         drive_site = pump_site if drive_site is None else drive_site
         kex_sites = {s: kex for s in {int(pump_site), int(drive_site), *self.readout_sites}}
-        if tone_freqs is not None:
-            assert len(tone_freqs) == self.n_inputs, "one tone frequency per observation dimension"
-            tone_freqs = list(tone_freqs) * (2 if two_sided else 1)
-        self.slow_beat = None if tone_freqs is None or fine is not None else slow_beat(tone_freqs, self.tone_modes)
         self.solver = CoupledLLESolver(H, N=N, dt=dt, Delta=Delta, d2=d2, drive_modes=self.tone_modes,
                                        pump_site=pump_site, drive_site=drive_site, kex_sites=kex_sites,
                                        tone_freqs=tone_freqs, dtype=dtype, device=device)
@@ -218,7 +205,7 @@ class LatticeChaoticFeatureMap(_RingBase):
 
     @property
     def clock(self):
-        """Solver time. Exists only with off-grid tones, whose carrier phases are part of the lattice state."""
+        """Solver time. Exists only for the mini-comb, whose carrier phases are part of the lattice state."""
         return self.solver.t
 
     @clock.setter

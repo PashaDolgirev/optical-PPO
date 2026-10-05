@@ -169,6 +169,15 @@ single-ring operating point (`auto_detuning`). Two presets (`characterization/05
 
 ![The two lattice operating regimes](tests/lattice_regimes.png)
 
+**A mini-comb inside one longitudinal mode.** `--tone_sigma` puts the pump and all encoding tones
+into ONE longitudinal mode, on the nearly equidistant edge supermodes of the lattice (pump on one,
+one input on each of the others, spaced by a fitted "mini FSR"), and reads the fine lines of the
+drop ring's output by a Fourier transform in time. One longitudinal mode per ring is then enough
+(`--N 1`). On the AQH 4 × 4 lattice this solves the Pendulum swing-up to −249 from four features
+(one seed; linear policy −718…−1038). Details in [LATTICE_EXTENSION.md](LATTICE_EXTENSION.md).
+
+    python PPO_MR.py --env Pendulum-v1 --regime topo --lattice aqh --J 20 --dt 0.005 --N 1 --tone_sigma 6 8 9 --tag mini4_edge
+
 ## PPO
 
 Standard clipped-ratio PPO (GAE λ = 0.95, frozen per-buffer targets, critic fitted first, 20 full-batch
@@ -213,6 +222,7 @@ python characterization/01_operating_point.py                # 02…04 likewise;
 |---|---|
 | `microring/lle_torch.py` | batched LLE solver: multi-tone drive, exact-flow Strang splitting, Newton continuation + Jacobian stability |
 | `microring/lattice.py` | coupled-ring lattices: `H_IQH` / `H_AQH` Hamiltonians, `CoupledLLESolver` (per-mode matrix exponentials), edge-supermode auto-detuning |
+| `animate_mini.py` | episode animation of a `--tone_sigma` (mini-comb) policy |
 | `microring/features.py` | `ChaoticRingFeatureMap` (persistent rings, time-averaged spectrum), `StaticRingFeatureMap` (stationary state), `LatticeChaoticFeatureMap` (topological comb, drop-port readout) |
 | `microring/__init__.py` | the regimes (`REGIMES`), per-task observation scaling (`TASKS`), `make_ring()` |
 | `microring/diagnostics.py` | Lyapunov exponent, split-half SNR, linear decodability, variance decomposition |

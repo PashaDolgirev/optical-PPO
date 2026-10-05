@@ -39,32 +39,25 @@ Re(c_m - i lambda) <= -1 always (every supermode keeps at least the intrinsic lo
 division is safe. The Kerr sub-flow is local per ring and unchanged. Cost per step is one
 batched (N, R, R) x (B, R, N) contraction + the FFTs: ~R^2/log N times the single ring.
 
-Tones on other supermodes (tone_freqs)
---------------------------------------
-Inside every longitudinal mode mu sits the same ladder of R supermodes sigma (eigenvalues
-lambda_sigma of H): the resonances are labelled (mu, sigma) and lie at Delta + lambda_sigma +
-d2 mu^2 from the pump's equidistant grid. By default every tone sits ON that grid, i.e. on the
-pump's supermode. With `tone_freqs`, tone k (on drive_modes[k]) is shifted off the grid by
-Omega_k -- Omega_k = lambda_sigma_k - lambda_sigma_pump moves it to (mu_k, sigma_k), detuned from
-it exactly as a grid tone is from (mu_k, sigma_pump) -- and the drive becomes time dependent:
+A mini-comb inside one longitudinal mode (tone_freqs)
+-----------------------------------------------------
+Inside every longitudinal mode sits the same ladder of R supermodes sigma (eigenvalues lambda_sigma
+of H). With `tone_freqs`, tone k (on drive_modes[k], which may then be the pump's mode m = 0) is
+Omega_k away from the pump's grid, and the drive becomes time dependent:
 
-    F_{r,mu}(t) = delta_{r,pump} F0 delta_{mu,0} + delta_{r,drive} sum_k f_k delta_{mu,mu_k} exp(-i Omega_k t)
+    F_{r,m}(t) = delta_{r,pump} F0 delta_{m,0} + delta_{r,drive} sum_k f_k delta_{m,m_k} exp(-i Omega_k t)
 
 The linear + drive flow stays exact,
     a(t+h) = E a(t) + f_k exp(-i Omega_k t) V diag((e^{z h} - e^{-i Omega_k h}) / (z + i Omega_k)) V^-1 e_drive,
-and reduces to R_m at Omega_k = 0. There is no stationary state then: the field of line mu is a
-sum of components at the mixing frequencies sum_k m_k Omega_k with sum_k m_k mu_k = mu, so the
-line powers beat at the combinations sum_k n_k Omega_k with sum_k n_k mu_k = 0, and what is
-detected is a time average. Most beats are fast (differences of supermode eigenvalues), but
-nearly equidistant supermodes leave a slow one -- slow_beat() -- that the averaging window has
-to span a whole number of times. On an equidistant ladder Omega_k = a + b mu_k the tones share
-the single frequency a in the frame rotating at b, so the line powers beat at the multiples of
-a only: slowly again if the pump is nearly, but not exactly, a rung of the ladder. tone_ladder()
-therefore takes the ladder through the pump's grid, Omega_k = b (mu_k - j) with an integer j:
-the whole drive is then periodic with period 2 pi / |b| and every beat is a multiple of b.
+and reduces to R_m at Omega_k = 0. This is how the pump and the encoding tones are put on different
+supermodes of ONE longitudinal mode (make_ring(tone_sigma=...)): pump on sigma_p, tone k at
+n_k delta from it, n_k = sigma_k - sigma_p and delta the "mini FSR" fitted to those supermodes. The
+drive is then an equidistant comb inside the mode, periodic with period 2 pi / delta, four-wave
+mixing fills further lines n delta, and the lines are read from the output of the drop ring by a
+Fourier transform in time (features.LatticeChaoticFeatureMap). The solver clock t is part of the
+state of the lattice.
 """
 
-import itertools
 import numpy as np
 import torch
 
@@ -190,57 +183,6 @@ def tone_frequencies(H, pump_sigma, tone_sigma):
     return [float(lam[s] - lam[pump_sigma]) for s in tone_sigma]
 
 
-def tone_ladder(tone_freqs, tone_modes, max_shift=1.0):
-    """
-    The frequency ladder through the pump's grid closest to `tone_freqs`: Omega_k = b (mu_k - j) with an
-    integer j -- least squares in b, the j that moves the tones least. Every tone is then a multiple of
-    b away from the grid, so the drive is periodic with period 2 pi / |b|: line powers and fields beat at
-    the multiples of b only, with one- or two-sided tones, and a tone on mu_k = j stays on the grid.
-    Two conditions, in intrinsic half-linewidths, or the ladder is refused: no tone moves by `max_shift`
-    or more (it would leave the supermode it was put on), and the rungs are at least 2 `max_shift` apart,
-    so that every tone stays closest to its own rung (tones on one supermode are never split, and slow
-    ladders, which fit any nearly degenerate tones, are out). Tones that all lie within `max_shift` of the
-    grid go onto the grid itself. Only rungs with |mu_k - j| < |Omega_k| / max_shift + 1 for every tone
-    can satisfy both conditions: all of those are tried.
-    """
-    Om, mu = np.asarray(tone_freqs, dtype=float), np.asarray(tone_modes, dtype=float)
-    assert len(Om) == len(mu), "one frequency per tone"
-    k = int(np.abs(Om).argmin())                                # the tone closest to the grid bounds j most tightly
-    reach = int(abs(Om[k]) / max_shift) + 1
-    best = (float(np.abs(Om).max()), 0.0 * Om)                  # the grid itself (b = 0)
-    for j in sorted(range(int(mu[k]) - reach, int(mu[k]) + reach + 1), key=abs):     # ties go to the rung closest to the pump
-        x = mu - j
-        if x.any():
-            b = (x @ Om) / (x @ x)
-            shift = float(np.abs(b * x - Om).max())
-            if abs(b) >= 2 * max_shift and shift < best[0] - 1e-12:
-                best = (shift, b * x)
-    assert best[0] < max_shift, (f"tone_ladder: no equidistant ladder through the pump's grid with rungs at least {2 * max_shift:g} apart "
-                                 f"lies within {max_shift:g} of these tones (the closest would move one by {best[0]:.2f} half-linewidths)")
-    return [float(w) for w in best[1]]
-
-
-def slow_beat(tone_freqs, tone_modes, order=4, tol=1e-9):
-    """
-    Slowest beat of the line powers under off-grid tones (see the module docstring): the smallest
-    nonzero |sum_k n_k Omega_k| over the integer n with sum_k n_k mu_k = 0 and sum_k |n_k| <= order,
-    or None if there is none. A time average over T_avg keeps the fraction
-    |sin(w T_avg / 2) / (w T_avg / 2)| of a beat at w in the features, which then depend on the
-    solver clock: T_avg should be a whole number of periods 2 pi / w.
-    """
-    Om, mu = np.asarray(tone_freqs, dtype=float), np.asarray(tone_modes, dtype=int)
-    units = [(k, sign) for k in range(len(Om)) for sign in (1, -1)]
-    beats = []
-    for size in range(2, order + 1):
-        for combo in itertools.combinations_with_replacement(units, size):
-            n = np.zeros(len(Om), dtype=int)
-            for k, sign in combo:
-                n[k] += sign
-            if n @ mu == 0 and abs(n @ Om) > tol:
-                beats.append(abs(float(n @ Om)))
-    return min(beats) if beats else None
-
-
 # ----------------------------------------------------------------------------- solver
 class CoupledLLESolver(LLESolver):
     """
@@ -267,7 +209,7 @@ class CoupledLLESolver(LLESolver):
         self.dtype, self.device, self.scheme = dtype, device, "exact"
         self.rdtype = torch.float32 if dtype == torch.complex64 else torch.float64
         self.drive_modes = tuple(int(m) for m in drive_modes)
-        assert tone_freqs is not None or 0 not in self.drive_modes, "m = 0 is the pump; only off-grid tones can share it"
+        assert tone_freqs is not None or 0 not in self.drive_modes, "m = 0 is the pump; only tones with their own frequency (tone_freqs) can share it"
         self.pump_site = int(pump_site)
         self.drive_site = self.pump_site if drive_site is None else int(drive_site)
         self.H = H

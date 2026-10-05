@@ -26,8 +26,8 @@ never queried twice, since a chaotic ring would answer differently each time.
 
     python PPO_MR.py --env CartPole-v1 --policy mr --regime chaos --seed 0
     python PPO_MR.py --env CartPole-v1 --policy mr --regime topo --seed 0            # 4x4 Hafezi lattice
-    python PPO_MR.py --env CartPole-v1 --policy mr --regime topo --lattice aqh --J 20 --dt 0.005 \
-                     --tone_sigma 6 7 8 9 --tag aqh_sigma                           # every tone on its own edge supermode
+    python PPO_MR.py --env Pendulum-v1 --policy mr --regime topo --lattice aqh --J 20 --dt 0.005 --N 1 \
+                     --tone_sigma 6 8 9 --tag mini4_edge                            # mini-comb on the four edge supermodes
     python PPO_MR.py --env Pendulum-v1 --policy mr --regime normal --seed 0
     python PPO_MR.py --env LunarLander-v3 --policy mr --regime normal --seed 0 --resume   # continue an interrupted run
 
@@ -131,7 +131,7 @@ def calibrate(ring, seed=0):
     """
     rng = np.random.default_rng(seed)
     saved = (ring.a.clone(), ring.f.clone()) if hasattr(ring, "f") else (ring.a.clone(),)
-    clock = getattr(ring, "clock", None)                      # lattice with off-grid tones: the carrier phases
+    clock = getattr(ring, "clock", None)                      # lattice with a mini-comb: the carrier phases
     feats, s = [], np.zeros((ring.B, ring.n_inputs))
     for _ in range(24 if hasattr(ring, "f") else 8):
         if hasattr(ring, "f"):
@@ -279,17 +279,15 @@ def main():
     p.add_argument("--pump_sigma", type=int, default=None,
                    help="topo only: supermode (index in ascending eigenvalue) the pump sits on (default: auto, edge); the drop ring does not follow it")
     p.add_argument("--tone_sigma", type=int, nargs="+", default=None,
-                   help="topo only: supermode of every tone, one per input (default: all on the pump's supermode); give the run a --tag")
-    p.add_argument("--tone_ladder", action="store_true",
-                   help="topo only, with --tone_sigma: move the tones onto the closest equidistant frequency ladder through the pump's grid "
-                        "(a periodic drive: the slow beat of nearly equidistant supermodes is gone)")
+                   help="topo only: mini-comb inside the pump's longitudinal mode -- the supermode of every tone, one per input, "
+                        "none of them the pump's; pump and tones are equidistant by the mini FSR fitted to these supermodes; give the run a --tag")
     p.add_argument("--mini_comb", choices=["edge", "all", "bulk"], default=None,
-                   help="topo only, with --tone_sigma: pump and tones all in the longitudinal mode m = 0, equidistant by the mini FSR fitted "
-                        "to their supermodes; read the fine lines of the drop ring: of the driven supermodes (edge), all in the band, or the rest (bulk)")
+                   help="topo only, with --tone_sigma: the fine lines of the drop ring that are read -- those of the driven supermodes "
+                        "(edge, the default), all in the band of the lattice, or the latter without the former (bulk)")
     p.add_argument("--drop_site", type=int, default=None,
                    help="topo only: ring (index y * nx + x) whose drop port is read (default: the corner downstream of the automatic edge supermode)")
     p.add_argument("--dt", type=float, default=None, help="time step of the solver (default: the regime's preset; a lattice needs J dt << 1)")
-    p.add_argument("--N", type=int, default=None, help="number of longitudinal modes per ring (default: the regime's preset; 1 with --mini_comb below the comb threshold)")
+    p.add_argument("--N", type=int, default=None, help="number of longitudinal modes per ring (default: the regime's preset; 1 is enough for --tone_sigma below the comb threshold)")
     p.add_argument("--obs_noise", type=float, default=0.0, help="--policy linear/poly2 only: std of white noise added to s~")
     p.add_argument("--eval_episodes", type=int, default=64, help="greedy episodes after training (0 = skip)")
     p.add_argument("--tag", type=str, default="")
@@ -320,13 +318,9 @@ def main():
         if args.regime.startswith("topo"):
             overrides.update(nx=args.nx, ny=args.ny, J=args.J, phi=args.flux,
                              lattice=args.lattice, Delta=args.Delta,
-                             pump_sigma=args.pump_sigma, tone_sigma=args.tone_sigma, tone_ladder=args.tone_ladder or None,
+                             pump_sigma=args.pump_sigma, tone_sigma=args.tone_sigma,
                              mini_comb=args.mini_comb, drop_site=args.drop_site)
         featurizer, ring_cfg = make_ring(args.regime, args.n_envs, task["obs_scale"], seed=args.seed, **overrides)
-        if getattr(featurizer, "slow_beat", None):            # off-grid tones: what the averaging window leaves of the slowest beat
-            w = featurizer.slow_beat
-            print(f"off-grid tones: the line powers beat, slowest period {2 * np.pi / w:.2f}; T_avg = {featurizer.T_avg:g} keeps "
-                  f"{abs(np.sinc(w * featurizer.T_avg / (2 * np.pi))):.0%} of that beat in the features (none at a whole number of periods)", flush=True)
         mean, std = calibrate(featurizer, seed=args.seed)
         policy = LinearReadout(featurizer.n_features, n_actions, mean, std)
     elif args.policy in ("linear", "poly2"):

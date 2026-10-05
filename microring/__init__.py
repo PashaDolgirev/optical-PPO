@@ -2,7 +2,7 @@ import numpy as np
 
 from .lle_torch import LLESolver, cw_intracavity_power, mi_gain
 from .lattice import (CoupledLLESolver, H_IQH, H_AQH, default_ports, edge_sites, pump_supermode,
-                      auto_detuning, supermode_table, tone_frequencies, tone_ladder, slow_beat)
+                      auto_detuning, supermode_table, tone_frequencies)
 from .features import (ChaoticRingFeatureMap, StaticRingFeatureMap, MicroringFeatureMap,
                        LatticeChaoticFeatureMap)
 
@@ -68,14 +68,15 @@ def make_ring(regime, n_envs, obs_scale, seed=0, **overrides):
         drop = int(cfg.pop("drop_site", drop))              # the default is downstream of the automatic edge band only
         assert 0 <= drop < nx * ny, f"rings are numbered 0 .. {nx * ny - 1}"
         target = cfg.pop("target_Delta")
-        # (mu, sigma) of the drive: the pump sits on (0, pump_sigma) -- by default the edge supermode the
-        # corner couples to best -- and tone j = 1..d on (j, tone_sigma[j-1]); tone_sigma = None keeps every
-        # tone on the pump's supermode (the time-independent drive of the original scheme). tone_ladder moves
-        # the tones onto the equidistant frequency ladder through the pump's grid closest to these supermodes:
-        # nearly equidistant supermodes otherwise leave a slow beat in the line powers (lattice.slow_beat).
-        pump_sigma, tone_sigma = cfg.pop("pump_sigma", None), cfg.pop("tone_sigma", None)
-        ladder = bool(cfg.pop("tone_ladder", False))
-        assert tone_sigma is not None or not ladder, "tone_ladder moves the tones that tone_sigma places"
+        # The pump sits on the supermode pump_sigma (index in ascending eigenvalue) -- by default the edge supermode the
+        # corner couples to best. tone_sigma = None keeps every tone on the pump's grid in its own longitudinal mode (the
+        # time-independent drive of the presets). With tone_sigma the drive is a MINI-COMB inside the pump's longitudinal
+        # mode: tone k sits on m = 0 at n_k * delta from the pump, n_k = tone_sigma_k - pump_sigma and delta the mini FSR
+        # fitted (least squares) to those supermodes, and the fine lines n * delta of the drop ring are read: those of the
+        # driven supermodes (mini_comb = "edge", the default), all that fit into the band of H ("all"), or the latter
+        # without the former ("bulk").
+        pump_sigma, tone_sigma, mini = cfg.pop("pump_sigma", None), cfg.pop("tone_sigma", None), cfg.pop("mini_comb", None)
+        assert tone_sigma is not None or mini is None, "mini_comb selects the lines read with tone_sigma"
         if pump_sigma is None:
             lam_p, _, pump_sigma = pump_supermode(H, pump, edge=edge_sites(nx, ny))
         else:
@@ -84,21 +85,12 @@ def make_ring(regime, n_envs, obs_scale, seed=0, **overrides):
         if cfg.get("Delta") is None:
             cfg["Delta"] = target - lam_p
         if tone_sigma is not None:
+            mini = mini or "edge"
             assert len(tone_sigma) == len(obs_scale), "one supermode per observation dimension"
             assert all(0 <= s < nx * ny for s in tone_sigma), f"supermodes are numbered 0 .. {nx * ny - 1}"
-            cfg["tone_freqs"] = tone_frequencies(H, pump_sigma, tone_sigma)
-            if ladder:
-                mu = range(1, len(tone_sigma) + 1) if cfg.get("drive_modes") is None else cfg["drive_modes"]
-                cfg["tone_freqs"] = tone_ladder(cfg["tone_freqs"], mu)
-        # mini_comb ("edge" | "all" | "bulk"): everything inside the pump's longitudinal mode. The tones sit on m = 0 at
-        # n_k * delta from the pump, n_k = tone_sigma_k - pump_sigma and delta the mini FSR fitted to those supermodes
-        # (least squares); read are the fine lines n * delta of the drop ring: those of the driven supermodes ("edge"),
-        # all that fit into the band of H ("all"), or the latter without the former ("bulk").
-        mini = cfg.pop("mini_comb", None)
-        if mini is not None:
-            assert mini in ("edge", "all", "bulk") and tone_sigma is not None and not ladder, "mini_comb needs tone_sigma (no tone_ladder)"
-            n, Om, lam = np.asarray(tone_sigma) - pump_sigma, np.asarray(cfg.pop("tone_freqs")), np.linalg.eigvalsh(H)
-            assert n.all(), "the pump's supermode is taken: put the tones on the others"
+            assert mini in ("edge", "all", "bulk"), "mini_comb is 'edge', 'all' or 'bulk'"
+            n, Om, lam = np.asarray(tone_sigma) - pump_sigma, np.asarray(tone_frequencies(H, pump_sigma, tone_sigma)), np.linalg.eigvalsh(H)
+            assert n.all() and len(set(n.tolist())) == len(n), "one supermode per tone, none of them the pump's"
             delta = float(n @ Om / (n @ n))
             assert delta > 0 and np.abs(delta * n - Om).max() < 1, "these supermodes are not close to equidistant"
             every = range(int(np.ceil((lam[0] - lam_p) / delta)), int(np.floor((lam[-1] - lam_p) / delta)) + 1)
@@ -108,12 +100,11 @@ def make_ring(regime, n_envs, obs_scale, seed=0, **overrides):
             cfg["fine"] = dict(delta=delta, rungs=[int(k) for k in n], lines=lines)
         fm = LatticeChaoticFeatureMap(n_envs, obs_scale, H, pump_site=pump, readout_sites=(drop,),
                                       seed=seed, **cfg)
-        if mini is not None:
+        if tone_sigma is not None:
             cfg["fine"]["delta"], cfg["T_avg"] = fm.fine_delta, fm.T_avg        # as rounded to the sample grid
         return fm, {"regime": regime, "kind": kind, "nx": nx, "ny": ny, "J": J, "phi": phi,
                     "lattice": lat, "pump_site": pump, "readout_sites": [drop], "pump_sigma": int(pump_sigma),
-                    "tone_sigma": None if tone_sigma is None else [int(s) for s in tone_sigma],
-                    "tone_ladder": ladder, **cfg}
+                    "tone_sigma": None if tone_sigma is None else [int(s) for s in tone_sigma], **cfg}
     cls = ChaoticRingFeatureMap if kind == "chaotic" else StaticRingFeatureMap
     return cls(n_envs, obs_scale, seed=seed, **cfg), {"regime": regime, "kind": kind, **cfg}
 
