@@ -54,7 +54,7 @@ supermodes of ONE longitudinal mode (make_ring(tone_sigma=...)): pump on sigma_p
 n_k delta from it, n_k = sigma_k - sigma_p and delta the "mini FSR" fitted to those supermodes. The
 drive is then an equidistant comb inside the mode, periodic with period 2 pi / delta, four-wave
 mixing fills further lines n delta, and the lines are read from the output of the drop ring by a
-Fourier transform in time (features.LatticeChaoticFeatureMap). The solver clock t is part of the
+Fourier transform in time (features.LatticeFeatureMap). The solver clock t is part of the
 state of the lattice.
 """
 
@@ -108,6 +108,40 @@ def H_AQH(nx, ny, J=1.0, phi=np.pi / 4, spin=-1):
     m = r[(x > 0) & (y < ny - 1) & (mx % 2 != my % 2)]          # diagonal NW
     H[m, m + nx - 1] = H[m + nx - 1, m] = -J
     return H
+
+
+def zigzag_sites(nx, ny):
+    """(x, y) of the rings of the zigzag lattice in site order: rows y = 1 .. 2 ny - 1, odd rows hold nx - 1 rings, even rows nx."""
+    return np.array([(x, y) for y in range(1, 2 * ny) for x in range(1, nx + (y % 2 == 0))])
+
+
+def H_zigzag(nx, ny, J=1.0, phi=np.pi / 4, spin=-1):
+    """
+    AQH (Haldane-type) lattice cut with zigzag edges, R = nx (ny - 1) + ny (nx - 1) rings (same conventions as
+    the explorer's H_zigzag): phases exp(+-i spin phi) on the bonds between neighbouring rows, real hopping
+    between rings two rows apart in the odd rows and between neighbours within the even rows. Its edge band is
+    more linear than that of the flat lattice: many more, and more evenly spaced, edge supermodes for its size.
+    """
+    x, y = zigzag_sites(nx, ny).T
+    mx, my, qx, qy = x[:, None], y[:, None], x[None, :], y[None, :]
+    odd, up, dn = my % 2 == 1, -J * np.exp(1j * spin * phi), -J * np.exp(-1j * spin * phi)
+    V = np.zeros((len(x), len(x)), dtype=complex)                # bond m -> n as seen from m; the first rule that applies wins
+    for rule, val in (((my == qy) & ~odd & (np.abs(mx - qx) == 1), -J), ((mx == qx) & odd & (np.abs(my - qy) == 2), -J),
+                      (~odd & (((mx == qx) & (my - qy == 1)) | ((mx == qx + 1) & (qy == my + 1))), dn),
+                      (~odd & (((mx == qx) & (qy - my == 1)) | ((mx == qx + 1) & (qy == my - 1))), up),
+                      (odd & (((mx == qx) & (my - qy == 1)) | ((mx == qx - 1) & (qy == my + 1))), dn),
+                      (odd & (((mx == qx) & (qy - my == 1)) | ((mx == qx - 1) & (qy == my - 1))), up)):
+        V = np.where(rule, val, V)
+    np.fill_diagonal(V, 0)
+    L, U = np.tril(V, -1), np.triu(V, 1)                         # the bond as seen from the higher-numbered ring wins (as in the explorer)
+    L, U = L + L.conj().T, U + U.conj().T
+    return np.where(L != 0, L, U)
+
+
+def boundary_sites(H):
+    """Rings with fewer bonds than the best-connected ones: the boundary of any lattice."""
+    deg = (np.abs(H) > 0).sum(0)
+    return np.flatnonzero(deg < deg.max())
 
 
 def default_ports(nx, ny, lattice="iqh"):

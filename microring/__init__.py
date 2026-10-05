@@ -1,10 +1,9 @@
 import numpy as np
 
 from .lle_torch import LLESolver, cw_intracavity_power, mi_gain
-from .lattice import (CoupledLLESolver, H_IQH, H_AQH, default_ports, edge_sites, pump_supermode,
+from .lattice import (CoupledLLESolver, H_IQH, H_AQH, H_zigzag, zigzag_sites, boundary_sites, default_ports, edge_sites, pump_supermode,
                       auto_detuning, supermode_table, tone_frequencies)
-from .features import (ChaoticRingFeatureMap, StaticRingFeatureMap, MicroringFeatureMap,
-                       LatticeChaoticFeatureMap)
+from .features import ChaoticRingFeatureMap, StaticRingFeatureMap, MicroringFeatureMap, LatticeFeatureMap
 
 # ---------------------------------------------------------------------------------------------
 # Operating regimes. Everything the ring needs except the task-specific observation scaling.
@@ -29,27 +28,16 @@ REGIMES = {
                     two_sided=True, init="noise", T_prep=600.0),
     "soliton": dict(kind="static", N=128, dt=0.01, Delta=3.0, d2=0.0125, F0=float(np.sqrt(3.0)), eps=0.02,
                     two_sided=True, init="soliton", soliton_centre=float(np.pi), T_prep=150.0),
-    # topo: coupled-ring lattice (topological frequency comb, microring/lattice.py), run streaming
-    # like "chaos": pump into the (0, 0) corner ring, tones on the same bus, detection at the drop
-    # port of the chirality-downstream corner ring. Delta=None resolves to auto_detuning(): the
-    # edge supermode the corner pump couples to best is placed at effective detuning target_Delta.
-    # F0^2 = 100 sits just below the lattice MI threshold (the pump spreads over ~n_edge rings, so
-    # the single-ring threshold scales up): maximal drop-port contrast ~0.1 with residual
-    # fluctuation noise ~3e-3; beyond F0^2 ~ 200 the comb goes chaotic and the contrast washes out.
-    # Quasi-stationary comb => T_avg = 10 suffices (noise ~ sqrt(2 tau_c / T_avg) stays << contrast).
-    "topo":    dict(kind="lattice", N=64, dt=0.01, Delta=None, target_Delta=1.76, d2=0.0125,
-                    F0=10.0, eps=0.6, two_sided=False, T_relax=3.0, T_avg=10.0,
-                    nx=4, ny=4, J=5.0, phi=float(np.pi / 2), lattice="iqh", kex=1.0),
-    # topo_chaos: the same lattice pumped past its MI threshold with STRONG tones -- a
-    # self-generated, strongly chaotic topological comb: lambda_max = +1.10, 2x the single
-    # ring's published chaos point (+0.54). The tones are the key knob (characterization/05
-    # maps the (F0^2, eps) grid): at eps = 1.5 the same pump gives lambda 0.49 -> 1.10, an
-    # ergodicity gap of 0.6% (stable from T = 100 to 400: mixing, not multistable) and the
-    # best drop-port contrast on the map (0.38 vs noise ~0.03-0.06 at T_avg = 25, ratio >= 7);
-    # at eps = 0.6 and higher pumps the contrast collapses to the noise level.
-    "topo_chaos": dict(kind="lattice", N=64, dt=0.01, Delta=None, target_Delta=1.76, d2=0.0125,
-                       F0=float(np.sqrt(150.0)), eps=1.5, two_sided=False, T_relax=3.0, T_avg=25.0,
-                       nx=4, ny=4, J=5.0, phi=float(np.pi / 2), lattice="iqh", kex=1.0),
+    # topo: coupled-ring lattice (microring/lattice.py) driven by a MINI-COMB inside ONE longitudinal mode. The pump sits
+    # on an edge supermode, one encoding tone on each of the neighbouring edge supermodes, all equidistant by the "mini
+    # FSR" fitted to them; read are the fine lines of the drop ring's output (features.LatticeFeatureMap). Delta = None:
+    # the pump's supermode is placed at effective detuning target_Delta. Below the comb threshold the other longitudinal
+    # modes stay empty, so N = 1. Validated operating point: AQH 4 x 4, J = 20, F0^2 = 100 (Pendulum: 3 inputs + pump =
+    # its 4 edge supermodes); tasks with more inputs need more edge supermodes (lattice="zigzag", larger nx, ny) and a
+    # pump that grows with the number of boundary rings.
+    "topo":    dict(kind="lattice", N=1, dt=0.005, Delta=None, target_Delta=1.76, d2=0.0125,
+                    F0=10.0, eps=0.6, T_relax=3.0, T_avg=10.0,
+                    nx=4, ny=4, J=20.0, phi=None, lattice="aqh", kex=1.0),
 }
 OPERATING_POINT = {k: REGIMES["chaos"][k] for k in ("N", "dt", "Delta", "d2", "F0")}
 
@@ -59,52 +47,54 @@ def make_ring(regime, n_envs, obs_scale, seed=0, **overrides):
     cfg = {**REGIMES[regime], **{k: v for k, v in overrides.items() if v is not None}}
     kind = cfg.pop("kind")
     if kind == "lattice":
-        if overrides.get("lattice") == "aqh" and overrides.get("phi") is None:
-            cfg["phi"] = float(np.pi / 4)                   # AQH asked for without a flux: its own, not the IQH preset's pi/2
         nx, ny, J, phi, lat = (cfg.pop(k) for k in ("nx", "ny", "J", "phi", "lattice"))
-        assert lat in ("iqh", "aqh"), "lattice is 'iqh' or 'aqh'"
-        H = (H_IQH if lat == "iqh" else H_AQH)(nx, ny, J=J, phi=phi)
-        pump, drop = default_ports(nx, ny, lat)
+        assert lat in ("iqh", "aqh", "zigzag"), "lattice is 'iqh', 'aqh' or 'zigzag'"
+        phi = float(np.pi / 2 if lat == "iqh" else np.pi / 4) if phi is None else phi     # the flux of each lattice type
+        H = {"iqh": H_IQH, "aqh": H_AQH, "zigzag": H_zigzag}[lat](nx, ny, J=J, phi=phi)
+        R, zig = len(H), lat == "zigzag"                    # zigzag: R = nx (ny - 1) + ny (nx - 1); its edge states reach one row further in
+        pump, drop = (0, R - (nx - 1)) if zig else default_ports(nx, ny, lat)      # zigzag: corner (1, 1) in, corner (1, 2 ny - 1) out
         drop = int(cfg.pop("drop_site", drop))              # the default is downstream of the automatic edge band only
-        assert 0 <= drop < nx * ny, f"rings are numbered 0 .. {nx * ny - 1}"
-        target = cfg.pop("target_Delta")
-        # The pump sits on the supermode pump_sigma (index in ascending eigenvalue) -- by default the edge supermode the
-        # corner couples to best. tone_sigma = None keeps every tone on the pump's grid in its own longitudinal mode (the
-        # time-independent drive of the presets). With tone_sigma the drive is a MINI-COMB inside the pump's longitudinal
-        # mode: tone k sits on m = 0 at n_k * delta from the pump, n_k = tone_sigma_k - pump_sigma and delta the mini FSR
-        # fitted (least squares) to those supermodes, and the fine lines n * delta of the drop ring are read: those of the
-        # driven supermodes (mini_comb = "edge", the default), all that fit into the band of H ("all"), or the latter
-        # without the former ("bulk").
-        pump_sigma, tone_sigma, mini = cfg.pop("pump_sigma", None), cfg.pop("tone_sigma", None), cfg.pop("mini_comb", None)
-        assert tone_sigma is not None or mini is None, "mini_comb selects the lines read with tone_sigma"
+        assert 0 <= drop < R, f"rings are numbered 0 .. {R - 1}"
+        target, d = cfg.pop("target_Delta"), len(obs_scale)
+        # The mini-comb. The pump sits on the supermode pump_sigma (index in ascending eigenvalue; default: the edge
+        # supermode the input corner couples to best), tone k on tone_sigma[k] (default: the d edge supermodes that form,
+        # with the pump's, the most evenly spaced run of d + 1 consecutive ones). Everything is in the longitudinal mode
+        # m = 0: tone k is n_k * delta from the pump, n_k = tone_sigma_k - pump_sigma, delta the mini FSR fitted (least
+        # squares) to those supermodes. Read are the fine lines n * delta of the drop ring: those of the driven supermodes
+        # (mini_comb = "edge", the default), all that fit into the band of H ("all"), or the latter without the former ("bulk").
+        pump_sigma, tone_sigma, mini = cfg.pop("pump_sigma", None), cfg.pop("tone_sigma", None), cfg.pop("mini_comb", None) or "edge"
+        assert mini in ("edge", "all", "bulk"), "mini_comb is 'edge', 'all' or 'bulk'"
+        lam, v = np.linalg.eigh(H)
+        w_edge = (np.abs(v[boundary_sites(H) if zig else edge_sites(nx, ny)]) ** 2).sum(0)
         if pump_sigma is None:
-            lam_p, _, pump_sigma = pump_supermode(H, pump, edge=edge_sites(nx, ny))
-        else:
-            assert 0 <= pump_sigma < nx * ny, f"supermodes are numbered 0 .. {nx * ny - 1}"
-            lam_p = float(np.linalg.eigvalsh(H)[pump_sigma])
+            _, _, pump_sigma = pump_supermode(H, pump, edge=boundary_sites(H) if zig else edge_sites(nx, ny), edge_min=0.6 if zig else 0.85)
+        assert 0 <= pump_sigma < R, f"supermodes are numbered 0 .. {R - 1}"
+        lam_p = float(lam[pump_sigma])
         if cfg.get("Delta") is None:
             cfg["Delta"] = target - lam_p
-        if tone_sigma is not None:
-            mini = mini or "edge"
-            assert len(tone_sigma) == len(obs_scale), "one supermode per observation dimension"
-            assert all(0 <= s < nx * ny for s in tone_sigma), f"supermodes are numbered 0 .. {nx * ny - 1}"
-            assert mini in ("edge", "all", "bulk"), "mini_comb is 'edge', 'all' or 'bulk'"
-            n, Om, lam = np.asarray(tone_sigma) - pump_sigma, np.asarray(tone_frequencies(H, pump_sigma, tone_sigma)), np.linalg.eigvalsh(H)
-            assert n.all() and len(set(n.tolist())) == len(n), "one supermode per tone, none of them the pump's"
-            delta = float(n @ Om / (n @ n))
-            assert delta > 0 and np.abs(delta * n - Om).max() < 1, "these supermodes are not close to equidistant"
-            every = range(int(np.ceil((lam[0] - lam_p) / delta)), int(np.floor((lam[-1] - lam_p) / delta)) + 1)
-            edge = sorted({0, *(int(k) for k in n)})
-            lines = {"edge": edge, "all": list(every), "bulk": [k for k in every if k not in edge]}[mini]
-            cfg.pop("feature_modes", None)
-            cfg["fine"] = dict(delta=delta, rungs=[int(k) for k in n], lines=lines)
-        fm = LatticeChaoticFeatureMap(n_envs, obs_scale, H, pump_site=pump, readout_sites=(drop,),
-                                      seed=seed, **cfg)
-        if tone_sigma is not None:
-            cfg["fine"]["delta"], cfg["T_avg"] = fm.fine_delta, fm.T_avg        # as rounded to the sample grid
-        return fm, {"regime": regime, "kind": kind, "nx": nx, "ny": ny, "J": J, "phi": phi,
-                    "lattice": lat, "pump_site": pump, "readout_sites": [drop], "pump_sigma": int(pump_sigma),
-                    "tone_sigma": None if tone_sigma is None else [int(s) for s in tone_sigma], **cfg}
+        fit = lambda n, Om: (lambda dl: (float(np.abs(dl * n - Om).max()), float(dl)))(n @ Om / (n @ n))     # (largest shift, delta)
+        if tone_sigma is None:
+            edge = [int(s) for s in np.flatnonzero((w_edge >= (0.6 if zig else 0.85)) & (np.abs(lam) < 0.5 * np.abs(lam).max()))]
+            runs = [edge[i:i + d + 1] for i in range(len(edge) - d) if pump_sigma in edge[i:i + d + 1] and edge[i + d] - edge[i] == d]
+            assert runs, (f"{d} inputs need a pump and {d} tones on {d + 1} consecutive edge supermodes around sigma = {pump_sigma}; this lattice "
+                          f"has {len(edge)} in its central gap: take a larger one (e.g. lattice='zigzag')")
+            cand = [[s for s in run if s != pump_sigma] for run in runs]
+            tone_sigma = min(cand, key=lambda ts: fit(np.asarray(ts) - pump_sigma, lam[ts] - lam_p)[0])
+        assert len(tone_sigma) == d, "one supermode per observation dimension"
+        assert all(0 <= s < R for s in tone_sigma), f"supermodes are numbered 0 .. {R - 1}"
+        n, Om = np.asarray(tone_sigma) - pump_sigma, np.asarray(tone_frequencies(H, pump_sigma, tone_sigma))
+        assert n.all() and len(set(n.tolist())) == len(n), "one supermode per tone, none of them the pump's"
+        shift, delta = fit(n, Om)
+        assert delta > 0 and shift < 1, "these supermodes are not close to equidistant"
+        every = range(int(np.ceil((lam[0] - lam_p) / delta)), int(np.floor((lam[-1] - lam_p) / delta)) + 1)
+        edge_lines = sorted({0, *(int(k) for k in n)})
+        lines = {"edge": edge_lines, "all": list(every), "bulk": [k for k in every if k not in edge_lines]}[mini]
+        cfg.pop("feature_modes", None)                      # the single-ring line selection does not apply
+        cfg["fine"] = dict(delta=delta, rungs=[int(k) for k in n], lines=lines)
+        fm = LatticeFeatureMap(n_envs, obs_scale, H, pump_site=pump, readout_sites=(drop,), seed=seed, **cfg)
+        cfg["fine"]["delta"], cfg["T_avg"] = fm.fine_delta, fm.T_avg        # as rounded to the sample grid
+        return fm, {"regime": regime, "kind": kind, "nx": nx, "ny": ny, "J": J, "phi": phi, "lattice": lat, "pump_site": pump,
+                    "readout_sites": [drop], "pump_sigma": int(pump_sigma), "tone_sigma": [int(s) for s in tone_sigma], **cfg}
     cls = ChaoticRingFeatureMap if kind == "chaotic" else StaticRingFeatureMap
     return cls(n_envs, obs_scale, seed=seed, **cfg), {"regime": regime, "kind": kind, **cfg}
 

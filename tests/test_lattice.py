@@ -3,16 +3,16 @@ The coupled-ring lattice solver (microring/lattice.py) against ground truths.
 
     python tests/test_lattice.py [/path/to/Topological_Photonics_Nonlinear_Explorer]
 
- 1. Hamiltonians are Hermitian; when the explorer repo is found, H_IQH / H_AQH match its
-    H_IQH_IQH / H_AQH_AQH builders (flat lattice, nx1 = ny1 = 1) element by element.
+ 1. Hamiltonians are Hermitian; when the explorer repo is found, H_IQH / H_AQH / H_zigzag match its
+    H_IQH_IQH / H_AQH_AQH (flat lattice, nx1 = ny1 = 1) / H_zigzag builders element by element.
  2. Linear propagators from the eigendecomposition match torch.matrix_exp of the dense
     L_m = c_m I - i H_aug, and the drive response matches L_m^-1 (E_m - 1), per mode.
  3. A 1 x 1 "lattice" (H = 0, no extra loss) reproduces the single-ring LLESolver trajectory
     to round-off: the full nonlinear integrator reduces to the validated single-ring one.
  4. Chiral edge transport: an 8 x 8 IQH lattice driven weakly at the corner on the
     best-coupled supermode concentrates its steady intensity on the boundary rings.
- 5. The topo feature map responds to its inputs: distinct observations give distinct
-    drop-port features, and a 0-th symbol repeated twice stays statistically stable.
+ 5. Zigzag lattice: a run of ten consecutive, nearly equidistant edge supermodes on 6 x 6 (enough
+    for the 8 inputs of LunarLander and the pump); its default drop corner is the downstream one.
  6. AQH: the default drop corner (0, ny-1) is the downstream one, not the IQH corner (nx-1, 0).
  7. Mini-comb inside one longitudinal mode (tone_sigma): (a) zero tone frequencies reproduce the
     time-independent drive exactly; (b) weak tones inside m = 0 ring up to the analytic linear
@@ -20,7 +20,8 @@ The coupled-ring lattice solver (microring/lattice.py) against ground truths.
     exactly and stays second order; (d) make_ring fits the mini FSR, rounds it to the sample grid
     and reads the fine lines of the drop ring: they are the Fourier components of its field, a
     held input repeats, the other longitudinal modes stay empty (N = 1 gives the same features),
-    "edge" / "bulk" are subsets of "all", and (state, clock) is the whole state of the lattice.
+    "edge" / "bulk" are subsets of "all", (state, clock) is the whole state of the lattice, and the
+    preset picks the pump's and the tones' supermodes by itself.
 """
 
 import os, sys
@@ -28,14 +29,15 @@ import numpy as np
 import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from microring import (LLESolver, CoupledLLESolver, H_IQH, H_AQH, default_ports, edge_sites, auto_detuning, supermode_table,
-                       tone_frequencies, LatticeChaoticFeatureMap, REGIMES, make_ring)
+from microring import (LLESolver, CoupledLLESolver, H_IQH, H_AQH, H_zigzag, boundary_sites, default_ports, edge_sites,
+                       auto_detuning, supermode_table, tone_frequencies, REGIMES, make_ring)
 
 # ---------------------------------------------------------------- 1. Hamiltonians
 for builder, phi in ((H_IQH, np.pi / 2), (H_AQH, np.pi / 4)):
     for nx, ny in ((2, 2), (4, 4), (3, 5)):
         H = builder(nx, ny, J=1.0, phi=phi)
         assert np.allclose(H, H.conj().T), f"{builder.__name__}({nx},{ny}) not Hermitian"
+assert all(np.allclose(Hz, Hz.conj().T) and len(Hz) == a * (b - 1) + b * (a - 1) for a, b in ((3, 3), (4, 6)) for Hz in [H_zigzag(a, b)])
 print("1a. H_IQH / H_AQH Hermitian: ok")
 
 explorer = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser(
@@ -46,7 +48,7 @@ if os.path.exists(os.path.join(explorer, "Linear.py")):
     import ast, types
     tree = ast.parse(open(os.path.join(explorer, "Linear.py")).read())
     wanted = {"LocationToNumber", "NumberToLocation", "_iqh_coords", "H_IQH_IQH", "H_AQH_AQH",
-              "J0", "Spin", "Spin_1sl"}
+              "J0", "Spin", "Spin_1sl", "H_zigzag", "NumberToLocation_AQH_zigzag"}
     keep = [n for n in tree.body
             if (isinstance(n, ast.FunctionDef) and n.name in wanted)
             or (isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id in wanted
@@ -59,6 +61,8 @@ if os.path.exists(os.path.join(explorer, "Linear.py")):
         assert np.allclose(H_IQH(nx, ny, J=1.0, phi=np.pi / 2, spin=-1), ref), "IQH mismatch vs explorer"
         ref = lin.H_AQH_AQH(nx, ny, 1, 1, J0=1.0, J1=1.0, Phi0=np.pi / 4, Phi1=0.0, Spin=-1)[1:, 1:]
         assert np.allclose(H_AQH(nx, ny, J=1.0, phi=np.pi / 4, spin=-1), ref), "AQH mismatch vs explorer"
+        ref = lin.H_zigzag(nx, ny, 1.0, np.pi / 4, -1)[1:, 1:]
+        assert np.abs(H_zigzag(nx, ny, J=1.0, phi=np.pi / 4, spin=-1) - ref).max() == 0, "zigzag mismatch vs explorer"
     print("1b. H builders match the explorer repo: ok")
 else:
     print(f"1b. explorer repo not found at {explorer}: skipped")
@@ -121,20 +125,20 @@ assert chirality > 2, f"chirality {chirality:.2f}: edge current does not favour 
 print(f"4.  corner-driven IQH 8x8: {edge_frac:.0%} on the edge rings, "
       f"drop/mirror corner ratio {chirality:.1f}: ok")
 
-# --------------------------------------------------------------- 5. feature map sanity
-fm = LatticeChaoticFeatureMap(3, obs_scale=(1.0, 0.75, 0.075, 0.75),
-                              H=H_IQH(3, 3, J=5.0, phi=np.pi / 2),
-                              Delta=auto_detuning(H_IQH(3, 3, J=5.0, phi=np.pi / 2), 0, 1.76),
-                              pump_site=0, readout_sites=(6,), N=32,
-                              T_relax=2.0, T_avg=10.0, T_warmup=30.0,
-                              feature_modes=list(range(-4, 5)), seed=0)
-obs = np.array([[0.0, 0, 0, 0], [0.5, 0.3, -0.02, 0.1], [-0.5, -0.3, 0.02, -0.1]])
-f1, f2 = fm(obs), fm(obs)
-assert f1.shape == (3, 9) and fm.n_features == 9
-spread = (f1 - f2).abs().max() / f1.abs().max()                    # chaos noise, must be O(10%) not O(1)
-contrast = (f1[1] - f1[2]).abs().max() / f1.abs().max()            # distinct inputs -> distinct features
-assert contrast > 2 * spread, f"features barely respond: contrast {contrast:.3f} vs noise {spread:.3f}"
-print(f"5.  topo feature map: contrast {contrast:.3f} >> chaos noise {spread:.3f}: ok")
+# ------------------------------------- 5. zigzag lattice: many evenly spaced edge supermodes
+Hz = H_zigzag(6, 6, J=40.0)
+lz, vz = np.linalg.eigh(Hz)
+bz = boundary_sites(Hz)
+ez = np.flatnonzero(((np.abs(vz[bz]) ** 2).sum(0) >= 0.6) & (np.abs(lz) < 0.5 * np.abs(lz).max()))
+gaps = np.diff(lz[ez])
+assert len(Hz) == 60 and len(bz) == 20 and list(ez) == list(range(25, 35)) and gaps.max() / gaps.min() < 1.15
+Pz = {}
+for dz in (60 - 5, 4):                                       # corner (1, 2 ny - 1), the default drop ring, against corner (nx - 1, 1)
+    K = np.zeros(60); K[[0, dz]] = 1.0
+    Pz[dz] = abs(np.linalg.solve((1 + 1j * (1.76 - lz[29])) * np.eye(60) + np.diag(K) + 1j * Hz, np.eye(60)[:, 0])[dz]) ** 2
+assert Pz[55] > 2 * Pz[4], f"zigzag drop port not downstream: {Pz[55]:.2e} vs {Pz[4]:.2e}"
+print(f"5.  zigzag 6x6: edge supermodes 25..34, spacing within {gaps.max() / gaps.min() - 1:.0%} of equidistant, "
+      f"drop corner gets {Pz[55] / Pz[4]:.0f}x the power of the other: ok")
 
 # ------------------------------------------------- 6. AQH: the drop port sits downstream too
 nx = ny = 8
@@ -250,20 +254,29 @@ assert (fA[:, [allL.index(n) for n in (-1, 0, 1, 2)]] / f1 - 1).abs().max() < 1e
 #     an explicit pump supermode and another drop ring
 fm8, cfg8 = mk(pump_sigma=8, tone_sigma=[6, 7, 9], drop_site=3, T_warmup=1.0)
 assert abs(cfg8["Delta"] - (1.76 - lam[8])) < 1e-12 and cfg8["fine"]["rungs"] == [-2, -1, 1] and cfg8["readout_sites"] == [3] and fm8.readout_sites == (3,)
-#     the preset itself: edge supermode at the operating point, time-independent drive, no clock; an explicit flux is kept
-fm0, cfg0 = make_ring("topo", 1, (1.0,) * 4, N=16, T_warmup=1.0)
-assert cfg0["Delta"] == auto_detuning(H_IQH(4, 4, J=5.0, phi=np.pi / 2), 0, 1.76, edge=edge_sites(4, 4)) and cfg0["readout_sites"] == [3]
-assert cfg0["tone_sigma"] is None and "fine" not in cfg0 and not hasattr(fm0, "clock")
-assert make_ring("topo", 1, (1.0,) * 4, lattice="aqh", phi=0.3, N=16, T_warmup=0.0)[1]["phi"] == 0.3
+#     the preset: AQH 4 x 4, J = 20, one longitudinal mode; it finds the pump's edge supermode and the tones' by itself
+fm0, cfg0 = make_ring("topo", 1, scale, squash="clip", T_warmup=1.0)
+assert (cfg0["lattice"], cfg0["J"], cfg0["N"], cfg0["phi"]) == ("aqh", 20.0, 1, np.pi / 4) and cfg0["readout_sites"] == [12]
+assert cfg0["pump_sigma"] == 7 and cfg0["tone_sigma"] == [6, 8, 9] and cfg0["fine"]["rungs"] == [-1, 1, 2] and fm0.n_features == 4
+assert abs(cfg0["Delta"] - auto_detuning(H, pump, 1.76, edge=edge_sites(nx, ny))) < 1e-12
+#     a larger lattice for more inputs: zigzag 6 x 6 carries the pump and the 8 tones of LunarLander
+fmz, cfgz = make_ring("topo", 1, (1.0,) * 8, lattice="zigzag", nx=6, ny=6, J=40.0, dt=0.0025, pump_sigma=26, T_warmup=0.0)
+assert cfgz["tone_sigma"] == list(range(27, 35)) and cfgz["fine"]["rungs"] == list(range(1, 9)) and cfgz["readout_sites"] == [55]
+assert fmz.n_features == 9 and cfgz["phi"] == np.pi / 4 and np.abs(cfgz["fine"]["delta"] * np.arange(1, 9) - (lz[27:35] - lz[26])).max() < 0.5
 #     mistakes are refused before anything is simulated
 for bad in (dict(tone_sigma=[-1, 8, 9]), dict(tone_sigma=[6, 8, 16]), dict(tone_sigma=[6, 8]), dict(tone_sigma=[6, 7, 9]), dict(tone_sigma=[6, 6, 8]),
             dict(tone_sigma=[6, 8, 12]), dict(pump_sigma=16), dict(pump_sigma=-1), dict(drop_site=16), dict(drop_site=-1), dict(lattice="AQH"),
-            dict(tone_sigma=None, mini_comb="all"), dict(mini_comb="some"), dict(two_sided=True), dict(observable="both")):
+            dict(mini_comb="some"), dict(observable="both"), dict(lattice="iqh", tone_sigma=None)):      # the last: no run of 4 edge supermodes
     try:
         mk(**bad)
     except AssertionError:
         continue
     raise SystemExit(f"make_ring accepted {bad}")
+try:
+    make_ring("topo", 1, (1.0,) * 4)                         # CartPole on the preset: 4 inputs need 5 edge supermodes, it has 4
+    raise SystemExit("make_ring accepted 4 inputs on a lattice with 4 edge supermodes")
+except AssertionError:
+    pass
 print(f"7.  mini-comb in one longitudinal mode: zero frequencies = static drive, linear response to {err:.1e}, second order ({order:.2f}), "
       f"fine lines = Fourier components of the drop ring, held input repeats to {wander:.0e}: ok")
 

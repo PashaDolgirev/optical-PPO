@@ -14,8 +14,8 @@ never queried twice, since a chaotic ring would answer differently each time.
 
 --policy selects what sits between obs and logits; everything else is shared:
     mr      ring (--regime chaos | normal | rolls | soliton) + linear readout      the experiment
-            or a coupled-ring lattice (--regime topo: topological frequency comb,
-            pump + tones into one corner ring, drop-port readout downstream)
+            or a coupled-ring lattice (--regime topo: a mini-comb on the edge supermodes of ONE
+            longitudinal mode, pump + tones into one corner ring, fine lines of the drop port)
     linear  s~ -> Linear: the ring removed                                         what the ring is given
     poly2   (s~_i, s~_i s~_j) -> Linear: explicit quadratic features               what a generic 2nd-order map would give
     nn      raw obs -> MLP(d-128-n_actions): a conventional policy network         the reference
@@ -25,9 +25,7 @@ never queried twice, since a chaotic ring would answer differently each time.
 (8 inputs incl. two binary leg contacts, 4 actions; needs gymnasium[box2d]).
 
     python PPO_MR.py --env CartPole-v1 --policy mr --regime chaos --seed 0
-    python PPO_MR.py --env CartPole-v1 --policy mr --regime topo --seed 0            # 4x4 Hafezi lattice
-    python PPO_MR.py --env Pendulum-v1 --policy mr --regime topo --lattice aqh --J 20 --dt 0.005 --N 1 \
-                     --tone_sigma 6 8 9 --tag mini4_edge                            # mini-comb on the four edge supermodes
+    python PPO_MR.py --env Pendulum-v1 --policy mr --regime topo --seed 0            # mini-comb on the 4 edge supermodes of a 4x4 lattice
     python PPO_MR.py --env Pendulum-v1 --policy mr --regime normal --seed 0
     python PPO_MR.py --env LunarLander-v3 --policy mr --regime normal --seed 0 --resume   # continue an interrupted run
 
@@ -261,7 +259,7 @@ def main():
     p.add_argument("--ent_coef", type=float, default=None)
     p.add_argument("--reward_scale", type=float, default=None)
     # microring
-    p.add_argument("--regime", choices=["chaos", "normal", "rolls", "soliton", "topo", "topo_chaos"], default="chaos")
+    p.add_argument("--regime", choices=["chaos", "normal", "rolls", "soliton", "topo"], default="chaos")
     p.add_argument("--observable", choices=["intensity", "field", "both"], default="intensity")
     p.add_argument("--eps", type=float, default=None, help="sub-band amplitude at s~ = 0 (default: the regime's preset)")
     p.add_argument("--T_relax", type=float, default=None, help="chaos and topo only: time the drive is held before averaging (lifetimes)")
@@ -273,21 +271,22 @@ def main():
     p.add_argument("--ny", type=int, default=None, help="topo only: lattice height in rings")
     p.add_argument("--J", type=float, default=None, help="topo only: inter-ring coupling (units of kappa/2)")
     p.add_argument("--flux", type=float, default=None,
-                   help="topo only: flux per plaquette in rad (default: pi/2 = 1/4 flux quantum; pi/4 with --lattice aqh)")
-    p.add_argument("--lattice", choices=["iqh", "aqh"], default=None, help="topo only: IQH (Hafezi) or AQH (Haldane-type) lattice")
-    p.add_argument("--Delta", type=float, default=None, help="topo only: pump detuning (default: auto, edge supermode at the chaos operating point)")
+                   help="topo only: flux per plaquette in rad (default: pi/2 for iqh, pi/4 for aqh and zigzag)")
+    p.add_argument("--lattice", choices=["iqh", "aqh", "zigzag"], default=None, help="topo only: IQH (Hafezi), AQH (Haldane-type) or AQH with zigzag edges")
+    p.add_argument("--Delta", type=float, default=None, help="topo only: pump detuning (default: auto, the pump's supermode at effective detuning 1.76)")
     p.add_argument("--pump_sigma", type=int, default=None,
                    help="topo only: supermode (index in ascending eigenvalue) the pump sits on (default: auto, edge); the drop ring does not follow it")
     p.add_argument("--tone_sigma", type=int, nargs="+", default=None,
-                   help="topo only: mini-comb inside the pump's longitudinal mode -- the supermode of every tone, one per input, "
-                        "none of them the pump's; pump and tones are equidistant by the mini FSR fitted to these supermodes; give the run a --tag")
+                   help="topo only: the supermode of every tone, one per input, none of them the pump's (default: the edge supermodes "
+                        "next to the pump's); pump and tones are equidistant by the mini FSR fitted to these supermodes")
     p.add_argument("--mini_comb", choices=["edge", "all", "bulk"], default=None,
-                   help="topo only, with --tone_sigma: the fine lines of the drop ring that are read -- those of the driven supermodes "
+                   help="topo only: the fine lines of the drop ring that are read -- those of the driven supermodes "
                         "(edge, the default), all in the band of the lattice, or the latter without the former (bulk)")
     p.add_argument("--drop_site", type=int, default=None,
                    help="topo only: ring (index y * nx + x) whose drop port is read (default: the corner downstream of the automatic edge supermode)")
     p.add_argument("--dt", type=float, default=None, help="time step of the solver (default: the regime's preset; a lattice needs J dt << 1)")
-    p.add_argument("--N", type=int, default=None, help="number of longitudinal modes per ring (default: the regime's preset; 1 is enough for --tone_sigma below the comb threshold)")
+    p.add_argument("--F0", type=float, default=None, help="pump amplitude (default: the regime's preset)")
+    p.add_argument("--N", type=int, default=None, help="number of longitudinal modes per ring (default: the regime's preset; topo: 1 is enough below the comb threshold)")
     p.add_argument("--obs_noise", type=float, default=0.0, help="--policy linear/poly2 only: std of white noise added to s~")
     p.add_argument("--eval_episodes", type=int, default=64, help="greedy episodes after training (0 = skip)")
     p.add_argument("--tag", type=str, default="")
@@ -310,7 +309,7 @@ def main():
     if args.policy == "mr":
         hw = 2 * n_obs if args.readout_halfwidth is None else args.readout_halfwidth
         overrides = dict(eps=args.eps, encoding=args.encoding, observable=args.observable, squash=task["squash"],
-                         feature_modes=None if hw == 0 else list(range(-hw, hw + 1)), dt=args.dt, N=args.N)
+                         feature_modes=None if hw == 0 else list(range(-hw, hw + 1)), dt=args.dt, N=args.N, F0=args.F0)
         if args.regime == "chaos" or args.regime.startswith("topo"):
             overrides.update(T_relax=args.T_relax, T_avg=args.T_avg)
         else:

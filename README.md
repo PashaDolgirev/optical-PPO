@@ -133,53 +133,36 @@ qualitatively different states; all four were tested (`REGIMES` in `microring/__
 The tones are set at ε = 0.19–0.32 F0: strong enough for a measurably nonlinear response, weak enough
 that the state survives.
 
-## Coupled rings: a topological frequency comb
+## Coupled rings: a mini-comb on topological edge supermodes
 
-*(Full details of this extension — model, validation, operating points, first results — in
+*(Full details — model, validation, operating point, first results — in
 [LATTICE_EXTENSION.md](LATTICE_EXTENSION.md).)*
 
-`--regime topo` replaces the single ring by an nx × ny **lattice of coupled rings** (default 4 × 4,
-`microring/lattice.py`), each carrying the full comb of N longitudinal modes:
+The single ring uses its longitudinal modes as channels, and those are one FSR apart: of the order
+of a THz, beyond what a modulator can write or a detector resolve directly. `--regime topo` replaces
+the ring by an nx × ny **lattice of coupled rings** (`microring/lattice.py`),
 
-$$\partial_t a_{r,m} = \left[-(1+i\Delta) - i d_2 m^2\right] a_{r,m} - i\sum_{r'}H_{rr'} a_{r',m} - \kappa_{ex,r} a_{r,m} + i(|\psi|^2\psi)_{r,m} + F_{r,m}.$$
+$$\partial_t a_{r,m} = \left[-(1+i\Delta) - i d_2 m^2\right] a_{r,m} - i\sum_{r'}H_{rr'} a_{r',m} - \kappa_{ex,r} a_{r,m} + i(|\psi|^2\psi)_{r,m} + F_{r,m},$$
 
-H is a tight-binding Hamiltonian over the ring sites — `H_IQH` (Hafezi lattice: uniform synthetic flux
-per plaquette, chiral edge states) or `H_AQH` (Haldane-type, staggered fluxes plus diagonals) — ported
-from, and cross-checked element by element against, the
-[Topological Photonic Lattice Explorer](https://github.com/lidaxu-physics/Topological_Photonics_Nonlinear_Explorer)
-(`tests/test_lattice.py`). The integrator is the same exact-flow Strang splitting: the linear + drive
-sub-flow is now a matrix exponential per longitudinal mode, built from one eigendecomposition of
-H − iκ_ex; the Kerr sub-flow stays local per ring. A 1 × 1 lattice reproduces `LLESolver` to round-off.
+and the channels by the **edge supermodes inside ONE longitudinal mode**. H is a topological
+tight-binding Hamiltonian — `H_IQH` (Hafezi lattice), `H_AQH` (Haldane-type) or `H_zigzag` (the
+latter with zigzag edges), cross-checked element by element against the
+[Topological Photonic Lattice Explorer](https://github.com/lidaxu-physics/Topological_Photonics_Nonlinear_Explorer).
+Its edge supermodes are nearly equidistant, and their spacing is set by the ring-ring coupling: of
+the order of a GHz. The pump sits on one of them, one encoding tone on each of its neighbours, all
+spaced by a fitted **mini FSR** δ — the same equidistant drive as for the single ring, three orders
+of magnitude closer together. Pump and tones enter one corner ring; the policy reads the fine lines
+n δ of the **drop port of the downstream corner ring**, separated by a Fourier transform of its
+output in time. Below the comb threshold the other longitudinal modes stay empty, so the lattice is
+simulated with one mode per ring (`N = 1`). The integrator is the same exact-flow Strang splitting,
+with a matrix exponential from one eigendecomposition of H − iκ_ex for the linear + drive sub-flow.
 
-The pump enters the (0, 0) corner ring and the observation tones ride on the same bus; the policy reads
-the comb at the **drop port of the chirality-downstream corner ring** — the light arrives there through
-the topologically protected edge channel (87 % of the steady intensity stays on the boundary rings, and
-the downstream corner receives ~7× more power than the mirror corner; both checked in the tests). The
-detuning is chosen automatically: the edge supermode the pump couples to best is placed at the
-single-ring operating point (`auto_detuning`). Two presets (`characterization/05`):
+On the AQH 4 × 4 lattice (four edge supermodes: the pump and the three inputs of the pendulum) this
+solves the Pendulum swing-up to −249 from four features (one seed; linear policy −718…−1038, best
+single ring −196…−252). Tasks with more inputs need more edge supermodes: the zigzag lattice has
+ten nearly equidistant ones at 6 × 6.
 
-* **`topo`** (F0² = 100): just below the lattice MI threshold — higher than the single ring's because
-  the pump spreads over the edge mode. The drop-port lines are *driven* four-wave-mixing products
-  (no self-generated comb), quasi-stationary, with input contrast ~10 % and residual noise ~0.3 % —
-  the lattice analogue of the `normal` regime.
-* **`topo_chaos`** (F0² = 150, ε = 1.5): past MI with strong tones — a **strongly chaotic
-  topological comb** (λ_max = +1.10, 2× the single ring's chaos point, ergodic to 0.6 %),
-  contrast ~38 % against ~3 % chaos noise at T_avg = 25 — the lattice analogue of the `chaos`
-  regime. The tone amplitude is decisive: weak tones halve λ and lose most of the contrast.
-
-![The two lattice operating regimes](tests/lattice_regimes.png)
-
-**A mini-comb inside one longitudinal mode.** The comb lines of a single ring are one FSR apart,
-of the order of a THz; the edge supermodes inside one longitudinal mode of the lattice are spaced
-by the ring-ring coupling, of the order of a GHz, within reach of a modulator and a detector.
-`--tone_sigma` therefore puts the pump and all encoding tones
-into ONE longitudinal mode, on the nearly equidistant edge supermodes of the lattice (pump on one,
-one input on each of the others, spaced by a fitted "mini FSR"), and reads the fine lines of the
-drop ring's output by a Fourier transform in time. One longitudinal mode per ring is then enough
-(`--N 1`). On the AQH 4 × 4 lattice this solves the Pendulum swing-up to −249 from four features
-(one seed; linear policy −718…−1038). Details in [LATTICE_EXTENSION.md](LATTICE_EXTENSION.md).
-
-    python PPO_MR.py --env Pendulum-v1 --regime topo --lattice aqh --J 20 --dt 0.005 --N 1 --tone_sigma 6 8 9 --tag mini4_edge
+    python PPO_MR.py --env Pendulum-v1 --policy mr --regime topo --seed 0
 
 ## PPO
 
@@ -215,8 +198,8 @@ pip install -r requirements.txt
 python PPO_MR.py --env CartPole-v1 --policy mr --regime chaos --seed 0                          # ~25 min, one CPU core
 python PPO_MR.py --env Pendulum-v1 --policy mr --regime normal --seed 0 --readout_halfwidth 8  # ~65 min
 python PPO_MR.py --env LunarLander-v3 --policy mr --regime normal --seed 0 --n_updates 250     # ~40 min; needs gymnasium[box2d]
-python PPO_MR.py --env CartPole-v1 --policy mr --regime topo --seed 0                           # ~60 min: 4x4 coupled-ring lattice
-bash run_experiments.sh cartpole|ablation|pendulum|lunar|topo|topo2|topo_chaos  # every run behind results/ppo/, resumable
+python PPO_MR.py --env Pendulum-v1 --policy mr --regime topo --seed 0                           # ~100 min: mini-comb on a 4x4 lattice
+bash run_experiments.sh cartpole|ablation|pendulum|lunar|topo  # every run behind results/ppo/, resumable
 python summarize_results.py                                  # the tables above, from the tracked run files
 python characterization/01_operating_point.py                # 02…04 likewise; --replot re-draws from cache
 ```
@@ -224,13 +207,13 @@ python characterization/01_operating_point.py                # 02…04 likewise;
 | path | what |
 |---|---|
 | `microring/lle_torch.py` | batched LLE solver: multi-tone drive, exact-flow Strang splitting, Newton continuation + Jacobian stability |
-| `microring/lattice.py` | coupled-ring lattices: `H_IQH` / `H_AQH` Hamiltonians, `CoupledLLESolver` (per-mode matrix exponentials), edge-supermode auto-detuning |
-| `animate_mini.py` | episode animation of a `--tone_sigma` (mini-comb) policy |
-| `microring/features.py` | `ChaoticRingFeatureMap` (persistent rings, time-averaged spectrum), `StaticRingFeatureMap` (stationary state), `LatticeChaoticFeatureMap` (topological comb, drop-port readout) |
+| `microring/lattice.py` | coupled-ring lattices: `H_IQH` / `H_AQH` / `H_zigzag` Hamiltonians, `CoupledLLESolver` (per-mode matrix exponentials, tones with their own frequency) |
+| `animate_mini.py` | episode animation of a lattice (mini-comb) policy |
+| `microring/features.py` | `ChaoticRingFeatureMap` (persistent rings, time-averaged spectrum), `StaticRingFeatureMap` (stationary state), `LatticeFeatureMap` (mini-comb on the edge supermodes, fine lines of the drop port) |
 | `microring/__init__.py` | the regimes (`REGIMES`), per-task observation scaling (`TASKS`), `make_ring()` |
 | `microring/diagnostics.py` | Lyapunov exponent, split-half SNR, linear decodability, variance decomposition |
 | `PPO_MR.py` | PPO; `--policy mr, linear, poly2, nn`; `--regime chaos, normal, rolls, soliton, topo`; `--env`; `--resume` |
-| `characterization/01…05` | why this operating point, this tone strength, this averaging window; the ordered states; the lattice chaos onset |
+| `characterization/01…04` | why this operating point, this tone strength, this averaging window; the ordered states |
 | `tests/` | port vs the original JAX solver; steady-state, regime and symmetry checks |
 | `run_experiments.sh`, `summarize_results.py`, `compare_policies.py` | the exact published runs, the tables, the figures |
 
