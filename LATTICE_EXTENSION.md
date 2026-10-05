@@ -58,7 +58,7 @@ of T_relax + T_avg.
 eigenvectors with ≥ 85 % of their weight on the boundary (the in-gap edge band), take the one the
 pump couples to best, and place it at the single-ring operating point (Δ_eff = Δ + λ). The ±λ
 tie is broken towards λ < 0 so the selected gap — and with it the chirality direction — is
-deterministic.
+deterministic. `--pump_sigma` puts the pump on a supermode chosen by hand instead (see below).
 
 ## Parameter choices: units and defaults
 
@@ -126,6 +126,116 @@ realisations, drop-port contrast vs repeat noise through the actual feature map)
   and raises the drop-port contrast to 0.38, the best anywhere on the map. At higher pumps or
   weak tones the contrast slides back towards the noise level.
 
+## Choosing the supermode of every tone (`--tone_sigma`)
+
+Inside every longitudinal mode μ sits the same ladder of R supermodes σ, so the resonances of the
+lattice are labelled (μ, σ) and lie at Δ + λ_σ + d₂μ² from the pump's equidistant grid. In the
+presets the pump sits on (0, σ_p) and every tone on the grid, i.e. on (μ_k, σ_p): all inputs enter
+through one supermode. `--tone_sigma σ_1 … σ_d` moves tone k to (μ_k, σ_k) instead, by shifting it
+off the grid by Ω_k = λ_σk − λ_σp, so that it is detuned from its supermode exactly as a grid tone
+is from the pump's:
+
+$$F_{r,\mu}(t) = \delta_{r,\mathrm{in}}\left[F_0\delta_{\mu,0} + \sum_k \varepsilon(1+\tilde s_k)\delta_{\mu,\mu_k}e^{-i\Omega_k t}\right]$$
+
+σ is the index of the supermode in ascending eigenvalue (`supermode_table()` lists eigenvalue,
+boundary weight and port overlaps); `--pump_sigma` overrides the automatic edge choice. The default,
+`tone_sigma = None`, is the time-independent drive of the presets and leaves them bit-identical.
+
+```
+python PPO_MR.py --regime topo --lattice aqh --J 20 --dt 0.005 --tone_sigma 6 7 8 9 --tag aqh_sigma
+```
+
+Give such a run a `--tag`: without one it writes over the result file and the checkpoint of the
+preset run (`mr_topo_seed0.json`). `--lattice aqh` without `--flux` now builds the AQH lattice at
+its own flux π/4 (it used to inherit the π/2 of the IQH preset). `--dt` sets the time step of the
+solver: J = 20 needs 0.005 to keep J·dt ≪ 1.
+
+What changes with off-grid tones:
+
+* The drive is time dependent. The linear sub-flow stays exact (`lattice.py`), but there is no
+  stationary state: the line powers beat at the combinations Σ n_k Ω_k with Σ n_k μ_k = 0, and
+  the features are their time average over T_avg. The solver clock is then part of the lattice
+  state: checkpoints and `calibrate()` save and restore it.
+* Most beats are fast — periods of 0.29 lifetimes and below for the AQH edge quartet at J = 20 —
+  and average out. But the quartet is only nearly equidistant, and that leaves one slow beat at
+  w = |λ₆ − 2λ₇ + λ₈| = 0.0323 J: a period of 9.7 lifetimes at J = 20 (19.5 at J = 10, 38.9 at
+  J = 5). A window T_avg keeps the fraction |sin(wT_avg/2) / (wT_avg/2)| of a beat at w, and the
+  features of a *held* input then wander with the clock: over repeated calls the worst of the 17
+  CartPole lines varies (std/mean) by 40 % at T_avg = 5, by 2 % at T_avg = 10 and by 8–9 % at
+  T_avg = 25. The preset T_avg = 10 happens to be one period. `slow_beat()` returns w and
+  `PPO_MR.py` prints the period and the fraction kept: make T_avg (`--T_avg`) a whole number of
+  periods, or use the ladder below.
+* `--tone_ladder` removes the slow beat at its root. It moves the tones onto the equidistant
+  ladder through the pump's grid, Ω_k = b(μ_k − j) with an integer j, that lies closest to the
+  chosen supermodes (least squares in b, the j that moves the tones least). Every tone is then a
+  multiple of b away from the grid, so the whole drive is periodic with period 2π/|b|: the line
+  powers and the fields beat at the multiples of b only, with one- or two-sided tones, and a
+  tone on μ_k = j stays on the grid. For the edge quartet at J = 20: j = 2, b = 10.91 (period
+  0.58), the tones move by 0.32, 0, 0.32 and 0 — against a loaded half-linewidth of 1.2–1.3 —
+  and the worst line varies by 1.4 % at T_avg = 5, 0.55 % at T_avg = 10 and 0.15 % at
+  T_avg = 25. The ladder has to pass through the grid: a free straight line Ω_k = a + bμ_k would
+  still beat at its offset a, and with the pump itself as a rung
+  (`--pump_sigma 6 --tone_sigma 7 8 9`) that offset is 0.22, a beat three times slower than the
+  one to be removed; through the grid (j = 0) that drive is static in a rotating frame.
+  `make_ring` refuses the ladder if a tone would move by 1 (an intrinsic half-linewidth) or
+  more, or if its rungs would be less than 2 apart: supermodes that are not nearly equidistant,
+  tones in another order, several tones on one supermode, or this quartet beyond J ≈ 60.
+* The carriers add time translation to the symmetries of the drive. The time-averaged spectrum
+  is blind to the phase θ_k of a tone except through combinations Σ n_k θ_k with Σ n_k Ω_k = 0
+  and Σ n_k μ_k = 0. Generic frequencies have none: every tone enters through |f_k| alone and
+  the tones need no mutual phase lock. The symmetric edge quartet of the AQH lattice has exactly
+  one, θ₁ − θ₂ − θ₃ + θ₄ (two mixing pathways, 1 + 4 and 2 + 3, feed the same lines and
+  interfere: reversing the phase of one tone changes the μ = 5 line by 60 %); detuning one tone
+  by a linewidth removes it. A ladder with j ≠ 0 has all those with Σ n_k = 0 (two independent
+  ones for four tones); with j = 0, as on the grid itself, all those with Σ n_k μ_k = 0. A signed
+  encoding would therefore lose individual signs in every case — with the tones on their
+  supermodes or on a ladder with j ≠ 0 only such products of them survive in the line powers, on
+  the grid or on a ladder with j = 0 only the signs of the even-mode tones — so the offset
+  encoding is mandatory. Field detection helps only for a tone left on the grid: the time
+  average of a line rotating at Ω_k vanishes once |Ω_k| T_avg ≫ 1.
+* Each input travels through a different supermode, i.e. a different spatial channel; four-wave
+  mixing has to match in μ and in σ. In the AQH lattice the spectrum is symmetric (±λ pairs), so
+  pairs of edge supermodes mix resonantly (λ₂ + λ₃ = λ₁ + λ₄).
+* One tone per supermode needs the supermodes resolved (numbers from the linear response). On the
+  AQH 4 × 4 lattice the four edge supermodes are 2.65–2.81 apart at J = 5, against a loaded
+  half-linewidth of 1.2–1.3: a tone then puts only 17–44 % of its intracavity energy into the
+  supermode it aims at. At J = 20 they are 10.6–11.2 apart and the share is 84–92 %, the
+  strongest other supermode carrying 4–10 % of the target's energy. Use `--J 20 --dt 0.005`.
+  The presets are no exception: at J = 5 the pump and the grid tones of the IQH 4 × 4 lattice put
+  32–37 % of their energy into "the pump's supermode" (91 % at J = 20).
+
+For `--lattice aqh` the default drop ring is now the corner (0, ny−1): the AQH edge band sits at
+the band centre and its current runs the other way round. At the operating point that corner
+receives 8× (4 × 4) to 55× (8 × 8) the light of the IQH corner (nx−1, 0) at J = 5, 7× at J = 10
+(8 × 8; test 6), and still 1.8× (4 × 4) to 2.7× (8 × 8) at J = 20, where the loss per round trip
+is small enough for the light to reach every corner (linear response). The four AQH edge
+supermodes σ = 6…9 share that direction (1.7–2.3× at J = 20), so the default suits
+`--tone_sigma 6 7 8 9`.
+
+The drop ring does not follow `--pump_sigma` or `--tone_sigma`, though: it is the corner
+downstream of the automatically selected edge band. On the IQH lattice the edge supermodes of the
+upper band (σ = 11, 12, 13 on 4 × 4) circulate the other way; pumped there, the default corner
+gets 0.14–0.35× (4 × 4) and 0.003–0.04× (8 × 8, σ = 46…50) the light of the opposite corner at
+J = 5. `--drop_site r` reads the drop port of ring r = y·nx + x instead.
+
+First observations at AQH 4 × 4, J = 20, pump on the edge supermode λ = −5.29 at Δ_eff = 1.76.
+These come from single exploratory runs with scripts that are not part of this repository yet:
+indications, not a characterisation.
+
+* Pump only: the lattice MI threshold lies between F₀² = 100 (no comb) and 150. F₀² = 150 gives
+  stationary Turing rolls 10 or 11 FSR apart (the roll number differs between runs) and
+  F₀² = 300 a denser stationary comb, both with one frequency per line: every line sits on the
+  pump's grid, the comb is not nested. From F₀² ≈ 600 the comb power fluctuates in time, and at
+  800 the light is spread over all supermodes.
+* Below threshold (F₀² = 100), tones on their own edge supermodes give a discrete grid of driven
+  four-wave-mixing lines on the (μ, σ) plane, predominantly on the edge supermodes.
+* Grid tones on top of the F₀² = 150 rolls: the roll lines survive up to ε ≈ 0.1 and dissolve into
+  a broad comb from ε ≈ 0.2, but at every ε the drop-port features depend strongly on the input
+  history: the spread due to the input is only 1.6–4.8 times the spread due to the history
+  (ε = 0.02–0.8), against 12–43 times below threshold (F₀² = 100, ε = 0.6 and 0.2). In these
+  runs — one-sided grid tones, one pump power — the pattern state did not give a usable feature
+  map.
+
 ## Validation (`tests/test_lattice.py`)
 
 1. `H_IQH` / `H_AQH` are Hermitian and match the explorer's builders **element by element**
@@ -138,6 +248,20 @@ realisations, drop-port contrast vs repeat noise through the actual feature map)
    the boundary rings, and the chirality-downstream corner receives ~7× the power of the mirror
    corner (this fixes the drop-port convention).
 5. The feature map responds: input contrast ≫ repeat noise.
+6. AQH: the default drop corner (0, ny−1) receives ~7× the power of the IQH corner (8 × 8, J = 10).
+7. Off-grid tones: all-zero `tone_freqs` reproduce the time-independent drive to round-off; weak
+   off-grid tones ring up to the analytic linear response (< 1e−8), each with > 80 % of its energy
+   on the supermode it aims at; with the pump on, the integrator composes exactly and stays second
+   order in dt; `make_ring` resolves `pump_sigma` / `tone_sigma` / `drop_site`, refuses indices
+   out of range and leaves the presets untouched; (state, clock) is the whole state of the
+   lattice; the features of a held input wander by > 10 % with the slow beat of the edge quartet
+   and by < 3 % on the ladder of `tone_ladder`, which is refused where it would take the tones
+   off their supermodes; two-sided tones keep the reflection symmetry.
+
+`tests/test_ppo_clock.py` runs `PPO_MR.py` end to end (three tiny trainings in a temporary
+directory): `--pump_sigma`, `--tone_sigma`, `--tone_ladder`, `--drop_site` and `--dt` reach the
+lattice and the evaluation lattice, the slow-beat note is printed, and the solver clock survives
+`calibrate()`, a checkpoint and `--resume`.
 
 The Benettin Lyapunov estimator in `microring/diagnostics.py` was generalised to lattice-shaped
 states (norm over everything but the batch axis); single-ring behaviour is unchanged.

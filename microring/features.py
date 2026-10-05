@@ -34,7 +34,7 @@ is then reflection symmetric and pins the pattern.
 import numpy as np
 import torch
 from .lle_torch import LLESolver, cw_intracavity_power
-from .lattice import CoupledLLESolver
+from .lattice import CoupledLLESolver, slow_beat
 
 
 class _RingBase:
@@ -135,13 +135,27 @@ class LatticeChaoticFeatureMap(_RingBase):
     (default: the drop ring alone), so n_features = len(readout_sites) * len(feature_modes) *
     (1, 2 or 3 depending on `observable`). Every ring in {pump, drive} + readout_sites carries
     a bus coupler and the corresponding extra loss `kex`.
+
+    tone_freqs: frequency of every tone relative to the pump's grid, one per input (see
+    lattice.py). None keeps all tones on the pump's supermode; lambda_sigma - lambda_pump puts
+    tone k on the supermode sigma of its longitudinal mode instead (with two_sided the -m copy
+    gets the same frequency: both sit on sigma and the drive stays reflection symmetric). The
+    translation-symmetry argument above then tightens. The carriers exp(-i Omega_k t) add time
+    translation to the symmetries, so the time-averaged spectrum is blind to the phase theta_k
+    of a tone except through combinations sum_k n_k theta_k with sum_k n_k Omega_k = 0 and
+    sum_k n_k m_k = 0 (generic frequencies have none; the symmetric edge quartet of the AQH
+    lattice has one, theta_1 - theta_2 - theta_3 + theta_4). A signed encoding would keep at
+    most such a product of the signs, so the offset encoding is mandatory; field detection
+    restores the sign only of a tone left on the grid (the time average of a line rotating at
+    Omega_k vanishes once |Omega_k| T_avg >> 1). `slow_beat` is the slowest low-order beat of
+    the line powers (None if nothing beats): T_avg should span a whole number of its periods.
     """
 
     def __init__(self, n_envs, obs_scale, H, F0=np.sqrt(10.0), eps=0.6, drive_modes=None, two_sided=False,
                  encoding="offset", squash="tanh", observable="intensity",
                  T_relax=3.0, T_avg=25.0, T_warmup=100.0, sample_dt=0.05,
                  N=64, dt=0.01, Delta=1.76, d2=0.0125, feature_modes=None,
-                 pump_site=0, drive_site=None, readout_sites=(0,), kex=1.0,
+                 pump_site=0, drive_site=None, readout_sites=(0,), kex=1.0, tone_freqs=None,
                  dtype=torch.complex64, device="cpu", seed=0):
         self._setup(n_envs, obs_scale, F0, eps, drive_modes, two_sided, encoding, squash,
                     observable, feature_modes, N)
@@ -149,9 +163,13 @@ class LatticeChaoticFeatureMap(_RingBase):
         self.n_features *= len(self.readout_sites)
         drive_site = pump_site if drive_site is None else drive_site
         kex_sites = {s: kex for s in {int(pump_site), int(drive_site), *self.readout_sites}}
+        if tone_freqs is not None:
+            assert len(tone_freqs) == self.n_inputs, "one tone frequency per observation dimension"
+            tone_freqs = list(tone_freqs) * (2 if two_sided else 1)
+        self.slow_beat = None if tone_freqs is None else slow_beat(tone_freqs, self.tone_modes)
         self.solver = CoupledLLESolver(H, N=N, dt=dt, Delta=Delta, d2=d2, drive_modes=self.tone_modes,
                                        pump_site=pump_site, drive_site=drive_site, kex_sites=kex_sites,
-                                       dtype=dtype, device=device)
+                                       tone_freqs=tone_freqs, dtype=dtype, device=device)
         self.n_relax, self.n_avg = int(round(T_relax / dt)), int(round(T_avg / dt))
         self.sample_every = max(1, int(round(sample_dt / dt)))
         self.T_relax, self.T_avg = T_relax, T_avg
@@ -168,6 +186,15 @@ class LatticeChaoticFeatureMap(_RingBase):
         self.a, (mean_I, mean_a) = self.solver.evolve(self.a, self.n_avg, accumulate=True,
                                                       sample_every=self.sample_every, with_field=True)
         return torch.cat([self.detect(mean_I[:, s], mean_a[:, s]) for s in self.readout_sites], 1)
+
+    @property
+    def clock(self):
+        """Solver time. Exists only with off-grid tones, whose carrier phases are part of the lattice state."""
+        return self.solver.t
+
+    @clock.setter
+    def clock(self, t):
+        self.solver.t = t
 
 
 class StaticRingFeatureMap(_RingBase):

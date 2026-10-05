@@ -26,6 +26,8 @@ never queried twice, since a chaotic ring would answer differently each time.
 
     python PPO_MR.py --env CartPole-v1 --policy mr --regime chaos --seed 0
     python PPO_MR.py --env CartPole-v1 --policy mr --regime topo --seed 0            # 4x4 Hafezi lattice
+    python PPO_MR.py --env CartPole-v1 --policy mr --regime topo --lattice aqh --J 20 --dt 0.005 \
+                     --tone_sigma 6 7 8 9 --tag aqh_sigma                           # every tone on its own edge supermode
     python PPO_MR.py --env Pendulum-v1 --policy mr --regime normal --seed 0
     python PPO_MR.py --env LunarLander-v3 --policy mr --regime normal --seed 0 --resume   # continue an interrupted run
 
@@ -129,6 +131,7 @@ def calibrate(ring, seed=0):
     """
     rng = np.random.default_rng(seed)
     saved = (ring.a.clone(), ring.f.clone()) if hasattr(ring, "f") else (ring.a.clone(),)
+    clock = getattr(ring, "clock", None)                      # lattice with off-grid tones: the carrier phases
     feats, s = [], np.zeros((ring.B, ring.n_inputs))
     for _ in range(24 if hasattr(ring, "f") else 8):
         if hasattr(ring, "f"):
@@ -140,6 +143,8 @@ def calibrate(ring, seed=0):
     ring.a = saved[0]
     if hasattr(ring, "f"):
         ring.f = saved[1]
+    if clock is not None:
+        ring.clock = clock
     feats = torch.cat(feats)
     std = feats.std(0)
     return feats.mean(0), std.clamp(min=1e-4 * float(std.max()))
@@ -259,17 +264,28 @@ def main():
     p.add_argument("--regime", choices=["chaos", "normal", "rolls", "soliton", "topo", "topo_chaos"], default="chaos")
     p.add_argument("--observable", choices=["intensity", "field", "both"], default="intensity")
     p.add_argument("--eps", type=float, default=None, help="sub-band amplitude at s~ = 0 (default: the regime's preset)")
-    p.add_argument("--T_relax", type=float, default=None, help="chaos only")
-    p.add_argument("--T_avg", type=float, default=None, help="chaos only")
+    p.add_argument("--T_relax", type=float, default=None, help="chaos and topo only: time the drive is held before averaging (lifetimes)")
+    p.add_argument("--T_avg", type=float, default=None, help="chaos and topo only: averaging window (lifetimes)")
     p.add_argument("--detector_noise", type=float, default=None, help="static regimes: relative error of each detected line")
     p.add_argument("--encoding", choices=["offset", "signed"], default="offset")
     p.add_argument("--readout_halfwidth", type=int, default=None, help="read comb lines |m| <= this (0 = all N lines; default 2 x number of inputs)")
     p.add_argument("--nx", type=int, default=None, help="topo only: lattice width in rings")
     p.add_argument("--ny", type=int, default=None, help="topo only: lattice height in rings")
     p.add_argument("--J", type=float, default=None, help="topo only: inter-ring coupling (units of kappa/2)")
-    p.add_argument("--flux", type=float, default=None, help="topo only: flux per plaquette in rad (pi/2 = 1/4 flux quantum)")
+    p.add_argument("--flux", type=float, default=None,
+                   help="topo only: flux per plaquette in rad (default: pi/2 = 1/4 flux quantum; pi/4 with --lattice aqh)")
     p.add_argument("--lattice", choices=["iqh", "aqh"], default=None, help="topo only: IQH (Hafezi) or AQH (Haldane-type) lattice")
     p.add_argument("--Delta", type=float, default=None, help="topo only: pump detuning (default: auto, edge supermode at the chaos operating point)")
+    p.add_argument("--pump_sigma", type=int, default=None,
+                   help="topo only: supermode (index in ascending eigenvalue) the pump sits on (default: auto, edge); the drop ring does not follow it")
+    p.add_argument("--tone_sigma", type=int, nargs="+", default=None,
+                   help="topo only: supermode of every tone, one per input (default: all on the pump's supermode); give the run a --tag")
+    p.add_argument("--tone_ladder", action="store_true",
+                   help="topo only, with --tone_sigma: move the tones onto the closest equidistant frequency ladder through the pump's grid "
+                        "(a periodic drive: the slow beat of nearly equidistant supermodes is gone)")
+    p.add_argument("--drop_site", type=int, default=None,
+                   help="topo only: ring (index y * nx + x) whose drop port is read (default: the corner downstream of the automatic edge supermode)")
+    p.add_argument("--dt", type=float, default=None, help="time step of the solver (default: the regime's preset; a lattice needs J dt << 1)")
     p.add_argument("--obs_noise", type=float, default=0.0, help="--policy linear/poly2 only: std of white noise added to s~")
     p.add_argument("--eval_episodes", type=int, default=64, help="greedy episodes after training (0 = skip)")
     p.add_argument("--tag", type=str, default="")
@@ -292,15 +308,21 @@ def main():
     if args.policy == "mr":
         hw = 2 * n_obs if args.readout_halfwidth is None else args.readout_halfwidth
         overrides = dict(eps=args.eps, encoding=args.encoding, observable=args.observable, squash=task["squash"],
-                         feature_modes=None if hw == 0 else list(range(-hw, hw + 1)))
+                         feature_modes=None if hw == 0 else list(range(-hw, hw + 1)), dt=args.dt)
         if args.regime == "chaos" or args.regime.startswith("topo"):
             overrides.update(T_relax=args.T_relax, T_avg=args.T_avg)
         else:
             overrides.update(detector_noise=args.detector_noise)
         if args.regime.startswith("topo"):
             overrides.update(nx=args.nx, ny=args.ny, J=args.J, phi=args.flux,
-                             lattice=args.lattice, Delta=args.Delta)
+                             lattice=args.lattice, Delta=args.Delta,
+                             pump_sigma=args.pump_sigma, tone_sigma=args.tone_sigma, tone_ladder=args.tone_ladder or None,
+                             drop_site=args.drop_site)
         featurizer, ring_cfg = make_ring(args.regime, args.n_envs, task["obs_scale"], seed=args.seed, **overrides)
+        if getattr(featurizer, "slow_beat", None):            # off-grid tones: what the averaging window leaves of the slowest beat
+            w = featurizer.slow_beat
+            print(f"off-grid tones: the line powers beat, slowest period {2 * np.pi / w:.2f}; T_avg = {featurizer.T_avg:g} keeps "
+                  f"{abs(np.sinc(w * featurizer.T_avg / (2 * np.pi))):.0%} of that beat in the features (none at a whole number of periods)", flush=True)
         mean, std = calibrate(featurizer, seed=args.seed)
         policy = LinearReadout(featurizer.n_features, n_actions, mean, std)
     elif args.policy in ("linear", "poly2"):
@@ -338,7 +360,7 @@ def main():
             featurizer.a = c["ring_a"]
             if hasattr(featurizer, "f"):
                 featurizer.f = c["ring_f"]
-            for k in ("n_calls", "n_substepped", "n_reprepared"):
+            for k in ("n_calls", "n_substepped", "n_reprepared", "clock"):
                 if k in c:
                     setattr(featurizer, k, c[k])
         obs = np.stack([env.reset(seed=args.seed * 10_000 + 1000 * first_update + i)[0] for i, env in enumerate(envs)])
@@ -352,7 +374,7 @@ def main():
             c["ring_a"] = featurizer.a
             if hasattr(featurizer, "f"):
                 c["ring_f"] = featurizer.f
-            for k in ("n_calls", "n_substepped", "n_reprepared"):
+            for k in ("n_calls", "n_substepped", "n_reprepared", "clock"):
                 if hasattr(featurizer, k):
                     c[k] = getattr(featurizer, k)
         torch.save(c, ckpt + ".tmp"); os.replace(ckpt + ".tmp", ckpt)      # atomic: a kill mid-write leaves the old file

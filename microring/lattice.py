@@ -38,8 +38,33 @@ H_aug = V diag(lambda) V^-1 gives every propagator at once:
 Re(c_m - i lambda) <= -1 always (every supermode keeps at least the intrinsic loss), so the
 division is safe. The Kerr sub-flow is local per ring and unchanged. Cost per step is one
 batched (N, R, R) x (B, R, N) contraction + the FFTs: ~R^2/log N times the single ring.
+
+Tones on other supermodes (tone_freqs)
+--------------------------------------
+Inside every longitudinal mode mu sits the same ladder of R supermodes sigma (eigenvalues
+lambda_sigma of H): the resonances are labelled (mu, sigma) and lie at Delta + lambda_sigma +
+d2 mu^2 from the pump's equidistant grid. By default every tone sits ON that grid, i.e. on the
+pump's supermode. With `tone_freqs`, tone k (on drive_modes[k]) is shifted off the grid by
+Omega_k -- Omega_k = lambda_sigma_k - lambda_sigma_pump moves it to (mu_k, sigma_k), detuned from
+it exactly as a grid tone is from (mu_k, sigma_pump) -- and the drive becomes time dependent:
+
+    F_{r,mu}(t) = delta_{r,pump} F0 delta_{mu,0} + delta_{r,drive} sum_k f_k delta_{mu,mu_k} exp(-i Omega_k t)
+
+The linear + drive flow stays exact,
+    a(t+h) = E a(t) + f_k exp(-i Omega_k t) V diag((e^{z h} - e^{-i Omega_k h}) / (z + i Omega_k)) V^-1 e_drive,
+and reduces to R_m at Omega_k = 0. There is no stationary state then: the field of line mu is a
+sum of components at the mixing frequencies sum_k m_k Omega_k with sum_k m_k mu_k = mu, so the
+line powers beat at the combinations sum_k n_k Omega_k with sum_k n_k mu_k = 0, and what is
+detected is a time average. Most beats are fast (differences of supermode eigenvalues), but
+nearly equidistant supermodes leave a slow one -- slow_beat() -- that the averaging window has
+to span a whole number of times. On an equidistant ladder Omega_k = a + b mu_k the tones share
+the single frequency a in the frame rotating at b, so the line powers beat at the multiples of
+a only: slowly again if the pump is nearly, but not exactly, a rung of the ladder. tone_ladder()
+therefore takes the ladder through the pump's grid, Omega_k = b (mu_k - j) with an integer j:
+the whole drive is then periodic with period 2 pi / |b| and every beat is a multiple of b.
 """
 
+import itertools
 import numpy as np
 import torch
 
@@ -92,14 +117,19 @@ def H_AQH(nx, ny, J=1.0, phi=np.pi / 4, spin=-1):
     return H
 
 
-def default_ports(nx, ny):
+def default_ports(nx, ny, lattice="iqh"):
     """
-    Input ring (0, 0) and drop ring (nx-1, 0). With the default conventions (spin = -1, the
-    negative-lambda edge band selected by pump_supermode) the chiral edge current from the
-    input corner runs along the bottom edge, so the drop port sits downstream of it
-    (tests/test_lattice.py checks the direction).
+    Input ring (0, 0) and the drop ring downstream of it. IQH: with the default conventions
+    (spin = -1, the negative-lambda edge band selected by pump_supermode) the chiral edge
+    current from the input corner runs along the bottom edge, to (nx-1, 0). AQH (at its flux
+    pi/4): the edge band sits at the band centre and its current runs the other way round, to
+    (0, ny-1), which receives 8x the light of (nx-1, 0) at J = 5 and still 1.8x at J = 20
+    (4 x 4: the smaller the loss per round trip, the more light reaches every corner).
+    tests/test_lattice.py checks both directions. The corner is downstream for THAT edge band
+    only: a negative flux, or a pump put by hand on an edge supermode of the other band (IQH,
+    lambda > 0), reverses the current.
     """
-    return 0, nx - 1
+    return (0, nx * (ny - 1)) if lattice == "aqh" else (0, nx - 1)
 
 
 def edge_sites(nx, ny):
@@ -143,6 +173,74 @@ def auto_detuning(H, pump_site, target, edge=None):
     return target - lam
 
 
+def supermode_table(H, pump_site, drop_site, edge=None):
+    """
+    The supermodes sigma = 0 .. R-1 of H in ascending eigenvalue (the index pump_supermode
+    returns and tone_sigma / pump_sigma refer to): rows (lambda, boundary weight, overlap with
+    the pump ring, overlap with the drop ring).
+    """
+    lam, v = np.linalg.eigh(H)
+    w_edge = (np.abs(v[edge]) ** 2).sum(0) if edge is not None else np.full(len(lam), np.nan)
+    return np.stack([lam, w_edge, np.abs(v[pump_site]) ** 2, np.abs(v[drop_site]) ** 2], 1)
+
+
+def tone_frequencies(H, pump_sigma, tone_sigma):
+    """Omega_k = lambda_sigma_k - lambda_sigma_pump: the shift that moves tone k from the pump's supermode to sigma_k."""
+    lam = np.linalg.eigvalsh(H)
+    return [float(lam[s] - lam[pump_sigma]) for s in tone_sigma]
+
+
+def tone_ladder(tone_freqs, tone_modes, max_shift=1.0):
+    """
+    The frequency ladder through the pump's grid closest to `tone_freqs`: Omega_k = b (mu_k - j) with an
+    integer j -- least squares in b, the j that moves the tones least. Every tone is then a multiple of
+    b away from the grid, so the drive is periodic with period 2 pi / |b|: line powers and fields beat at
+    the multiples of b only, with one- or two-sided tones, and a tone on mu_k = j stays on the grid.
+    Two conditions, in intrinsic half-linewidths, or the ladder is refused: no tone moves by `max_shift`
+    or more (it would leave the supermode it was put on), and the rungs are at least 2 `max_shift` apart,
+    so that every tone stays closest to its own rung (tones on one supermode are never split, and slow
+    ladders, which fit any nearly degenerate tones, are out). Tones that all lie within `max_shift` of the
+    grid go onto the grid itself. Only rungs with |mu_k - j| < |Omega_k| / max_shift + 1 for every tone
+    can satisfy both conditions: all of those are tried.
+    """
+    Om, mu = np.asarray(tone_freqs, dtype=float), np.asarray(tone_modes, dtype=float)
+    assert len(Om) == len(mu), "one frequency per tone"
+    k = int(np.abs(Om).argmin())                                # the tone closest to the grid bounds j most tightly
+    reach = int(abs(Om[k]) / max_shift) + 1
+    best = (float(np.abs(Om).max()), 0.0 * Om)                  # the grid itself (b = 0)
+    for j in sorted(range(int(mu[k]) - reach, int(mu[k]) + reach + 1), key=abs):     # ties go to the rung closest to the pump
+        x = mu - j
+        if x.any():
+            b = (x @ Om) / (x @ x)
+            shift = float(np.abs(b * x - Om).max())
+            if abs(b) >= 2 * max_shift and shift < best[0] - 1e-12:
+                best = (shift, b * x)
+    assert best[0] < max_shift, (f"tone_ladder: no equidistant ladder through the pump's grid with rungs at least {2 * max_shift:g} apart "
+                                 f"lies within {max_shift:g} of these tones (the closest would move one by {best[0]:.2f} half-linewidths)")
+    return [float(w) for w in best[1]]
+
+
+def slow_beat(tone_freqs, tone_modes, order=4, tol=1e-9):
+    """
+    Slowest beat of the line powers under off-grid tones (see the module docstring): the smallest
+    nonzero |sum_k n_k Omega_k| over the integer n with sum_k n_k mu_k = 0 and sum_k |n_k| <= order,
+    or None if there is none. A time average over T_avg keeps the fraction
+    |sin(w T_avg / 2) / (w T_avg / 2)| of a beat at w in the features, which then depend on the
+    solver clock: T_avg should be a whole number of periods 2 pi / w.
+    """
+    Om, mu = np.asarray(tone_freqs, dtype=float), np.asarray(tone_modes, dtype=int)
+    units = [(k, sign) for k in range(len(Om)) for sign in (1, -1)]
+    beats = []
+    for size in range(2, order + 1):
+        for combo in itertools.combinations_with_replacement(units, size):
+            n = np.zeros(len(Om), dtype=int)
+            for k, sign in combo:
+                n[k] += sign
+            if n @ mu == 0 and abs(n @ Om) > tol:
+                beats.append(abs(float(n @ Om)))
+    return min(beats) if beats else None
+
+
 # ----------------------------------------------------------------------------- solver
 class CoupledLLESolver(LLESolver):
     """
@@ -154,10 +252,12 @@ class CoupledLLESolver(LLESolver):
     drive_site : ring receiving the sub-band observation tones (default: the pump ring --
                  amplitude modulation of the pump bus)
     kex_sites  : {ring: extra loss} for every ring loaded by a bus coupler
+    tone_freqs : frequency Omega_k of every tone relative to the pump's grid (one per drive mode);
+                 None = all on the grid, the time-independent drive
     """
 
     def __init__(self, H, N=64, dt=0.01, Delta=1.76, d2=3.47e-3, drive_modes=(1, 2, 3, 4),
-                 pump_site=0, drive_site=None, kex_sites=None,
+                 pump_site=0, drive_site=None, kex_sites=None, tone_freqs=None,
                  dtype=torch.complex64, device="cpu"):
         H = np.asarray(H, dtype=complex)
         assert H.ndim == 2 and H.shape[0] == H.shape[1]
@@ -197,6 +297,14 @@ class CoupledLLESolver(LLESolver):
         self._Rm_half = to(np.einsum("ij,nj,jk->nik", V, (np.exp(zd * dt / 2) - 1.0) / zd, Vinv))
         self._G = self._G_half = None                           # set by set_drive()
 
+        # tones off the grid: response of every ring to tone k entering `drive_site`, (K, R)
+        self.tone_freqs = None if tone_freqs is None else np.asarray(tone_freqs, dtype=float)
+        if self.tone_freqs is not None:
+            assert len(self.tone_freqs) == len(self.drive_modes), "one frequency per tone"
+            zt, w, e_in = zd[1:], self.tone_freqs[:, None], Vinv[:, self.drive_site]
+            resp = lambda h: to(((np.exp(zt * h) - np.exp(-1j * w * h)) / (zt + 1j * w) * e_in[None, :]) @ V.T)
+            self._W, self._W_half, self.t = resp(dt), resp(dt / 2), 0.0
+
     # ------------------------------------------------------------------ drive
     def set_drive(self, F0, f=None, batch_size=None):
         """
@@ -209,7 +317,10 @@ class CoupledLLESolver(LLESolver):
         B = f.shape[0]
         Fv = torch.zeros(B, len(self.driven), self.R, dtype=self.dtype, device=self.device)
         Fv[:, 0, self.pump_site] = torch.as_tensor(F0, device=self.device).to(self.dtype)
-        Fv[:, 1:, self.drive_site] = f
+        if self.tone_freqs is None:
+            Fv[:, 1:, self.drive_site] = f
+        else:
+            self._f = f.clone()                                 # (B, K): rotating tones, applied in _lin
         G, G_half = (torch.zeros(B, self.R, self.N, dtype=self.dtype, device=self.device) for _ in range(2))
         for k, idx in enumerate(self.driven_idx):               # a few small (R, R) @ (B, R) products
             G[:, :, idx]      += torch.einsum("ij,bj->bi", self._Rm[k], Fv[:, k])
@@ -219,7 +330,14 @@ class CoupledLLESolver(LLESolver):
     # ---------------------------------------------------------------- stepping
     def _lin(self, a, half):
         E, G = (self._E_half, self._G_half) if half else (self._E, self._G)
-        return torch.einsum("nij,bjn->bin", E, a) + G
+        a = torch.einsum("nij,bjn->bin", E, a) + G
+        if self.tone_freqs is not None:
+            W, h = (self._W_half, self.dt / 2) if half else (self._W, self.dt)
+            phase = np.exp(-1j * self.tone_freqs * self.t)
+            for k, idx in enumerate(self.driven_idx[1:]):
+                a[:, :, idx] += self._f[:, k, None] * (complex(phase[k]) * W[k])
+            self.t += h
+        return a
 
     # evolve(), evolve_trace(), _kerr(), to_phi(), shifted() are inherited unchanged:
     # they act on the last (mode) axis / point-wise and are shape-agnostic in (B, R, N).

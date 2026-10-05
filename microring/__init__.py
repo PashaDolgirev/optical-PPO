@@ -1,8 +1,8 @@
 import numpy as np
 
 from .lle_torch import LLESolver, cw_intracavity_power, mi_gain
-from .lattice import (CoupledLLESolver, H_IQH, H_AQH, default_ports, edge_sites,
-                      pump_supermode, auto_detuning)
+from .lattice import (CoupledLLESolver, H_IQH, H_AQH, default_ports, edge_sites, pump_supermode,
+                      auto_detuning, supermode_table, tone_frequencies, tone_ladder, slow_beat)
 from .features import (ChaoticRingFeatureMap, StaticRingFeatureMap, MicroringFeatureMap,
                        LatticeChaoticFeatureMap)
 
@@ -59,16 +59,43 @@ def make_ring(regime, n_envs, obs_scale, seed=0, **overrides):
     cfg = {**REGIMES[regime], **{k: v for k, v in overrides.items() if v is not None}}
     kind = cfg.pop("kind")
     if kind == "lattice":
+        if overrides.get("lattice") == "aqh" and overrides.get("phi") is None:
+            cfg["phi"] = float(np.pi / 4)                   # AQH asked for without a flux: its own, not the IQH preset's pi/2
         nx, ny, J, phi, lat = (cfg.pop(k) for k in ("nx", "ny", "J", "phi", "lattice"))
+        assert lat in ("iqh", "aqh"), "lattice is 'iqh' or 'aqh'"
         H = (H_IQH if lat == "iqh" else H_AQH)(nx, ny, J=J, phi=phi)
-        pump, drop = default_ports(nx, ny)
+        pump, drop = default_ports(nx, ny, lat)
+        drop = int(cfg.pop("drop_site", drop))              # the default is downstream of the automatic edge band only
+        assert 0 <= drop < nx * ny, f"rings are numbered 0 .. {nx * ny - 1}"
         target = cfg.pop("target_Delta")
+        # (mu, sigma) of the drive: the pump sits on (0, pump_sigma) -- by default the edge supermode the
+        # corner couples to best -- and tone j = 1..d on (j, tone_sigma[j-1]); tone_sigma = None keeps every
+        # tone on the pump's supermode (the time-independent drive of the original scheme). tone_ladder moves
+        # the tones onto the equidistant frequency ladder through the pump's grid closest to these supermodes:
+        # nearly equidistant supermodes otherwise leave a slow beat in the line powers (lattice.slow_beat).
+        pump_sigma, tone_sigma = cfg.pop("pump_sigma", None), cfg.pop("tone_sigma", None)
+        ladder = bool(cfg.pop("tone_ladder", False))
+        assert tone_sigma is not None or not ladder, "tone_ladder moves the tones that tone_sigma places"
+        if pump_sigma is None:
+            lam_p, _, pump_sigma = pump_supermode(H, pump, edge=edge_sites(nx, ny))
+        else:
+            assert 0 <= pump_sigma < nx * ny, f"supermodes are numbered 0 .. {nx * ny - 1}"
+            lam_p = float(np.linalg.eigvalsh(H)[pump_sigma])
         if cfg.get("Delta") is None:
-            cfg["Delta"] = auto_detuning(H, pump, target, edge=edge_sites(nx, ny))
+            cfg["Delta"] = target - lam_p
+        if tone_sigma is not None:
+            assert len(tone_sigma) == len(obs_scale), "one supermode per observation dimension"
+            assert all(0 <= s < nx * ny for s in tone_sigma), f"supermodes are numbered 0 .. {nx * ny - 1}"
+            cfg["tone_freqs"] = tone_frequencies(H, pump_sigma, tone_sigma)
+            if ladder:
+                mu = range(1, len(tone_sigma) + 1) if cfg.get("drive_modes") is None else cfg["drive_modes"]
+                cfg["tone_freqs"] = tone_ladder(cfg["tone_freqs"], mu)
         fm = LatticeChaoticFeatureMap(n_envs, obs_scale, H, pump_site=pump, readout_sites=(drop,),
                                       seed=seed, **cfg)
         return fm, {"regime": regime, "kind": kind, "nx": nx, "ny": ny, "J": J, "phi": phi,
-                    "lattice": lat, "pump_site": pump, "readout_sites": [drop], **cfg}
+                    "lattice": lat, "pump_site": pump, "readout_sites": [drop], "pump_sigma": int(pump_sigma),
+                    "tone_sigma": None if tone_sigma is None else [int(s) for s in tone_sigma],
+                    "tone_ladder": ladder, **cfg}
     cls = ChaoticRingFeatureMap if kind == "chaotic" else StaticRingFeatureMap
     return cls(n_envs, obs_scale, seed=seed, **cfg), {"regime": regime, "kind": kind, **cfg}
 
