@@ -267,7 +267,7 @@ class CoupledLLESolver(LLESolver):
         self.dtype, self.device, self.scheme = dtype, device, "exact"
         self.rdtype = torch.float32 if dtype == torch.complex64 else torch.float64
         self.drive_modes = tuple(int(m) for m in drive_modes)
-        assert 0 not in self.drive_modes, "m = 0 is the pump; tones go on m != 0"
+        assert tone_freqs is not None or 0 not in self.drive_modes, "m = 0 is the pump; only off-grid tones can share it"
         self.pump_site = int(pump_site)
         self.drive_site = self.pump_site if drive_site is None else int(drive_site)
         self.H = H

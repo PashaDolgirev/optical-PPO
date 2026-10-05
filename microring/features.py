@@ -155,23 +155,39 @@ class LatticeChaoticFeatureMap(_RingBase):
                  encoding="offset", squash="tanh", observable="intensity",
                  T_relax=3.0, T_avg=25.0, T_warmup=100.0, sample_dt=0.05,
                  N=64, dt=0.01, Delta=1.76, d2=0.0125, feature_modes=None,
-                 pump_site=0, drive_site=None, readout_sites=(0,), kex=1.0, tone_freqs=None,
+                 pump_site=0, drive_site=None, readout_sites=(0,), kex=1.0, tone_freqs=None, fine=None,
                  dtype=torch.complex64, device="cpu", seed=0):
+        # fine = dict(delta, rungs, lines): the mini-comb INSIDE the pump's longitudinal mode. Every tone sits on m = 0,
+        # rungs[k] * delta away from the pump (delta: the "mini FSR" fitted to the supermodes); detected are the powers of
+        # the lines n * delta, n in `lines`, of a_{r,0}(t) at the readout ring(s), separated by a Fourier transform over
+        # the averaging window. delta is rounded so that one period 2 pi / delta is a whole number of samples and the
+        # window a whole number of periods: the lines are then exactly orthogonal on the sample grid.
+        self.fine = fine
+        if fine is not None:
+            assert tone_freqs is None and not two_sided and observable == "intensity" and drive_modes is None
+            self.sample_every = max(1, int(round(min(sample_dt, 0.025) / dt)))
+            self.n_period = max(4, int(round(2 * np.pi / (fine["delta"] * dt * self.sample_every))))     # samples per period
+            self.fine_delta = 2 * np.pi / (self.n_period * self.sample_every * dt)
+            self.fine_lines = np.asarray(fine["lines"], dtype=int)
+            assert np.ptp(self.fine_lines) < self.n_period, "more lines than samples per period"
+            drive_modes, tone_freqs = (0,) * len(obs_scale), [self.fine_delta * n for n in fine["rungs"]]
+            T_avg = max(1, int(round(T_avg / (self.n_period * self.sample_every * dt)))) * self.n_period * self.sample_every * dt
         self._setup(n_envs, obs_scale, F0, eps, drive_modes, two_sided, encoding, squash,
                     observable, feature_modes, N)
         self.readout_sites = tuple(int(s) for s in readout_sites)
-        self.n_features *= len(self.readout_sites)
+        self.n_features = len(self.readout_sites) * (self.n_features if fine is None else len(self.fine_lines))
         drive_site = pump_site if drive_site is None else drive_site
         kex_sites = {s: kex for s in {int(pump_site), int(drive_site), *self.readout_sites}}
         if tone_freqs is not None:
             assert len(tone_freqs) == self.n_inputs, "one tone frequency per observation dimension"
             tone_freqs = list(tone_freqs) * (2 if two_sided else 1)
-        self.slow_beat = None if tone_freqs is None else slow_beat(tone_freqs, self.tone_modes)
+        self.slow_beat = None if tone_freqs is None or fine is not None else slow_beat(tone_freqs, self.tone_modes)
         self.solver = CoupledLLESolver(H, N=N, dt=dt, Delta=Delta, d2=d2, drive_modes=self.tone_modes,
                                        pump_site=pump_site, drive_site=drive_site, kex_sites=kex_sites,
                                        tone_freqs=tone_freqs, dtype=dtype, device=device)
         self.n_relax, self.n_avg = int(round(T_relax / dt)), int(round(T_avg / dt))
-        self.sample_every = max(1, int(round(sample_dt / dt)))
+        if fine is None:
+            self.sample_every = max(1, int(round(sample_dt / dt)))
         self.T_relax, self.T_avg = T_relax, T_avg
         # grow the comb from noise with the tones at their s = 0 value
         self.a = self.solver.random_state(n_envs, generator=torch.Generator().manual_seed(seed))
@@ -183,9 +199,22 @@ class LatticeChaoticFeatureMap(_RingBase):
         """One symbol per lattice; returns (B, n_features) float32."""
         self.solver.set_drive(self.F0, self.encode(obs))
         self.a, _ = self.solver.evolve(self.a, self.n_relax)
+        if self.fine is not None:
+            return self._fine_lines()
         self.a, (mean_I, mean_a) = self.solver.evolve(self.a, self.n_avg, accumulate=True,
                                                       sample_every=self.sample_every, with_field=True)
         return torch.cat([self.detect(mean_I[:, s], mean_a[:, s]) for s in self.readout_sites], 1)
+
+    def _fine_lines(self):
+        """Powers of the lines n * delta of the m = 0 field at the readout ring(s): Fourier transform over the window."""
+        n_samples = self.n_avg // self.sample_every
+        sites = list(self.readout_sites)
+        c = torch.zeros(self.B, len(sites), len(self.fine_lines), dtype=torch.complex128)
+        for _ in range(n_samples):
+            self.a, _ = self.solver.evolve(self.a, self.sample_every)
+            phase = np.exp(1j * self.fine_delta * self.fine_lines * self.solver.t)      # line n rotates as exp(-i n delta t)
+            c += self.a[:, sites, 0, None].to(torch.complex128) * torch.as_tensor(phase)
+        return ((c / n_samples).abs() ** 2).reshape(self.B, -1).float()
 
     @property
     def clock(self):

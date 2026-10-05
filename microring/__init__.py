@@ -90,8 +90,26 @@ def make_ring(regime, n_envs, obs_scale, seed=0, **overrides):
             if ladder:
                 mu = range(1, len(tone_sigma) + 1) if cfg.get("drive_modes") is None else cfg["drive_modes"]
                 cfg["tone_freqs"] = tone_ladder(cfg["tone_freqs"], mu)
+        # mini_comb ("edge" | "all" | "bulk"): everything inside the pump's longitudinal mode. The tones sit on m = 0 at
+        # n_k * delta from the pump, n_k = tone_sigma_k - pump_sigma and delta the mini FSR fitted to those supermodes
+        # (least squares); read are the fine lines n * delta of the drop ring: those of the driven supermodes ("edge"),
+        # all that fit into the band of H ("all"), or the latter without the former ("bulk").
+        mini = cfg.pop("mini_comb", None)
+        if mini is not None:
+            assert mini in ("edge", "all", "bulk") and tone_sigma is not None and not ladder, "mini_comb needs tone_sigma (no tone_ladder)"
+            n, Om, lam = np.asarray(tone_sigma) - pump_sigma, np.asarray(cfg.pop("tone_freqs")), np.linalg.eigvalsh(H)
+            assert n.all(), "the pump's supermode is taken: put the tones on the others"
+            delta = float(n @ Om / (n @ n))
+            assert delta > 0 and np.abs(delta * n - Om).max() < 1, "these supermodes are not close to equidistant"
+            every = range(int(np.ceil((lam[0] - lam_p) / delta)), int(np.floor((lam[-1] - lam_p) / delta)) + 1)
+            edge = sorted({0, *(int(k) for k in n)})
+            lines = {"edge": edge, "all": list(every), "bulk": [k for k in every if k not in edge]}[mini]
+            cfg.pop("feature_modes", None)
+            cfg["fine"] = dict(delta=delta, rungs=[int(k) for k in n], lines=lines)
         fm = LatticeChaoticFeatureMap(n_envs, obs_scale, H, pump_site=pump, readout_sites=(drop,),
                                       seed=seed, **cfg)
+        if mini is not None:
+            cfg["fine"]["delta"], cfg["T_avg"] = fm.fine_delta, fm.T_avg        # as rounded to the sample grid
         return fm, {"regime": regime, "kind": kind, "nx": nx, "ny": ny, "J": J, "phi": phi,
                     "lattice": lat, "pump_site": pump, "readout_sites": [drop], "pump_sigma": int(pump_sigma),
                     "tone_sigma": None if tone_sigma is None else [int(s) for s in tone_sigma],

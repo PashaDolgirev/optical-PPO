@@ -283,9 +283,13 @@ def main():
     p.add_argument("--tone_ladder", action="store_true",
                    help="topo only, with --tone_sigma: move the tones onto the closest equidistant frequency ladder through the pump's grid "
                         "(a periodic drive: the slow beat of nearly equidistant supermodes is gone)")
+    p.add_argument("--mini_comb", choices=["edge", "all", "bulk"], default=None,
+                   help="topo only, with --tone_sigma: pump and tones all in the longitudinal mode m = 0, equidistant by the mini FSR fitted "
+                        "to their supermodes; read the fine lines of the drop ring: of the driven supermodes (edge), all in the band, or the rest (bulk)")
     p.add_argument("--drop_site", type=int, default=None,
                    help="topo only: ring (index y * nx + x) whose drop port is read (default: the corner downstream of the automatic edge supermode)")
     p.add_argument("--dt", type=float, default=None, help="time step of the solver (default: the regime's preset; a lattice needs J dt << 1)")
+    p.add_argument("--N", type=int, default=None, help="number of longitudinal modes per ring (default: the regime's preset; 1 with --mini_comb below the comb threshold)")
     p.add_argument("--obs_noise", type=float, default=0.0, help="--policy linear/poly2 only: std of white noise added to s~")
     p.add_argument("--eval_episodes", type=int, default=64, help="greedy episodes after training (0 = skip)")
     p.add_argument("--tag", type=str, default="")
@@ -308,7 +312,7 @@ def main():
     if args.policy == "mr":
         hw = 2 * n_obs if args.readout_halfwidth is None else args.readout_halfwidth
         overrides = dict(eps=args.eps, encoding=args.encoding, observable=args.observable, squash=task["squash"],
-                         feature_modes=None if hw == 0 else list(range(-hw, hw + 1)), dt=args.dt)
+                         feature_modes=None if hw == 0 else list(range(-hw, hw + 1)), dt=args.dt, N=args.N)
         if args.regime == "chaos" or args.regime.startswith("topo"):
             overrides.update(T_relax=args.T_relax, T_avg=args.T_avg)
         else:
@@ -317,7 +321,7 @@ def main():
             overrides.update(nx=args.nx, ny=args.ny, J=args.J, phi=args.flux,
                              lattice=args.lattice, Delta=args.Delta,
                              pump_sigma=args.pump_sigma, tone_sigma=args.tone_sigma, tone_ladder=args.tone_ladder or None,
-                             drop_site=args.drop_site)
+                             mini_comb=args.mini_comb, drop_site=args.drop_site)
         featurizer, ring_cfg = make_ring(args.regime, args.n_envs, task["obs_scale"], seed=args.seed, **overrides)
         if getattr(featurizer, "slow_beat", None):            # off-grid tones: what the averaging window leaves of the slowest beat
             w = featurizer.slow_beat
