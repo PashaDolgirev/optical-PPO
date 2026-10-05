@@ -128,10 +128,16 @@ realisations, drop-port contrast vs repeat noise through the actual feature map)
 
 ## A mini-comb inside one longitudinal mode (`--tone_sigma`)
 
-In the presets every input has its own longitudinal mode (tone k on μ = k). That cannot be done in
-an experiment on these lattices, and it is not needed: the supermodes of ONE longitudinal mode can
-play the role the longitudinal modes play in the single ring. Inside the pump's mode sit the R
-supermodes σ of the lattice (eigenvalues λ_σ of H), and the edge supermodes are nearly equidistant.
+The single ring establishes the principle with its longitudinal modes as channels: one input per
+comb line, read-out of the comb lines. But those lines are one FSR apart — of the order of a THz
+for a microring — far beyond what a modulator can write or a detector resolve directly. This is
+what the lattice is for: inside ONE longitudinal mode sit its R supermodes σ (eigenvalues λ_σ of
+H), the edge supermodes are nearly equidistant, and their spacing is set by the ring-ring coupling,
+i.e. it is of the order of a GHz. Replacing "longitudinal modes, one FSR apart" by "edge
+supermodes, one mini FSR apart" brings the same scheme into the range of ordinary electronics: for
+a linewidth κ/2π = 200 MHz the numbers below (J = 20, δ = 10.9) mean a coupling of 2 GHz, a mini FSR
+of 1.1 GHz and four read-out lines within 3.3 GHz, so that one modulator writes all tones and a
+heterodyne measurement of the drop port reads all lines.
 `--tone_sigma σ_1 … σ_d` puts the pump on one of them (σ_p, the automatic edge choice or
 `--pump_sigma`) and one tone on each of the others, all on μ = 0:
 

@@ -169,7 +169,10 @@ single-ring operating point (`auto_detuning`). Two presets (`characterization/05
 
 ![The two lattice operating regimes](tests/lattice_regimes.png)
 
-**A mini-comb inside one longitudinal mode.** `--tone_sigma` puts the pump and all encoding tones
+**A mini-comb inside one longitudinal mode.** The comb lines of a single ring are one FSR apart,
+of the order of a THz; the edge supermodes inside one longitudinal mode of the lattice are spaced
+by the ring-ring coupling, of the order of a GHz, within reach of a modulator and a detector.
+`--tone_sigma` therefore puts the pump and all encoding tones
 into ONE longitudinal mode, on the nearly equidistant edge supermodes of the lattice (pump on one,
 one input on each of the others, spaced by a fitted "mini FSR"), and reads the fine lines of the
 drop ring's output by a Fourier transform in time. One longitudinal mode per ring is then enough
