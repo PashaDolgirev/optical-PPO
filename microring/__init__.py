@@ -38,6 +38,15 @@ REGIMES = {
     "topo":    dict(kind="lattice", N=1, dt=0.005, Delta=None, target_Delta=1.76, d2=0.0125,
                     F0=10.0, eps=0.6, T_relax=3.0, T_avg=10.0,
                     nx=4, ny=4, J=20.0, phi=None, lattice="aqh", kex=1.0),
+    # topo_chaos: the same lattice and the same drive ABOVE the comb threshold. The light then spreads over the longitudinal
+    # modes (a third to a half of it leaves m = 0) and the comb is chaotic, so all modes are simulated (N = 64) and the
+    # response is no longer periodic: read is the POWER in the band delta around every line, averaged over the periods of
+    # the window (average = "power"), with chaos noise ~ 1 / sqrt(T_avg) as for the chaotic single ring. Strong tones are
+    # needed for the inputs to survive the noise: at F0^2 = 800, eps = 3 the driven lines have contrast / noise of 5-7 at
+    # T_avg = 12 (the others below 1).
+    "topo_chaos": dict(kind="lattice", N=64, dt=0.005, Delta=None, target_Delta=1.76, d2=0.0125,
+                       F0=float(np.sqrt(800.0)), eps=3.0, T_relax=3.0, T_avg=25.0, average="power",
+                       nx=4, ny=4, J=20.0, phi=None, lattice="aqh", kex=1.0),
 }
 OPERATING_POINT = {k: REGIMES["chaos"][k] for k in ("N", "dt", "Delta", "d2", "F0")}
 

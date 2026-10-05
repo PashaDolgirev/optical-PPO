@@ -1,7 +1,7 @@
 """
 One greedy CartPole episode of a --mini_comb policy (pump and tones inside one longitudinal mode), as an animation.
 
-    python animate_mini.py --tag mini12_edge [--seed 0] [--ep-seed 7] [--out x.gif|x.mp4]
+    python animate_mini.py --env Pendulum-v1 [--regime topo|topo_chaos] [--tag ...] [--seed 0] [--ep-seed 7] [--out x.gif|x.mp4]
 
 Panels: the task; the lattice (disc size = ring power on a log scale, colour = deviation from the episode mean);
 the fine lines n * delta of the drop ring (what a Fourier transform of its output gives: the lines the policy reads
@@ -18,16 +18,16 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import animation
 from matplotlib.colors import LinearSegmentedColormap
-from matplotlib.patches import FancyArrow, Rectangle
+from matplotlib.patches import FancyArrow, Polygon, Rectangle
 
-from microring import TASKS, edge_sites, make_ring
+from microring import TASKS, boundary_sites, edge_sites, make_ring, zigzag_sites
 from microring import plot_style as ps
 from PPO_MR import LinearReadout, make_env
 
 ps.apply()
 p = argparse.ArgumentParser()
-p.add_argument("--tag", required=True, help="the --tag of the training run")
-p.add_argument("--env", choices=["CartPole-v1", "Pendulum-v1"], default="CartPole-v1")
+p.add_argument("--tag", default="", help="the --tag of the training run (none: the untagged run)")
+p.add_argument("--env", choices=["CartPole-v1", "Pendulum-v1", "LunarLander-v3"], default="CartPole-v1")
 p.add_argument("--regime", default="topo")
 p.add_argument("--seed", type=int, default=0, help="which training seed's checkpoint to load")
 p.add_argument("--ep-seed", type=int, default=7, help="episode seed")
@@ -36,34 +36,41 @@ p.add_argument("--every", type=int, default=3, help="render every n-th control s
 p.add_argument("--fps", type=int, default=12)
 args = p.parse_args()
 env_name, short = args.env, args.env.split("-")[0]
-out = args.out or f"results/ppo/{short}/{args.regime}_{args.tag}.gif"
+label = f"mr_{args.regime}" + (f"_{args.tag}" if args.tag else "")
+out = args.out or f"results/ppo/{short}/{label[3:]}_{short.lower()}.gif"
 
 # ------------------------------------------------- trained policy + lattice, as the checkpoint describes it
-c = torch.load(f"results/ppo/{short}/checkpoints/mr_{args.regime}_{args.tag}_seed{args.seed}.pt", weights_only=False)
+c = torch.load(f"results/ppo/{short}/checkpoints/{label}_seed{args.seed}.pt", weights_only=False)
 rc, task = c["log"]["ring"], TASKS[env_name]
-keys = ("lattice", "nx", "ny", "J", "phi", "dt", "N", "F0", "eps", "T_relax", "T_avg", "tone_sigma", "pump_sigma")
+keys = ("lattice", "nx", "ny", "J", "phi", "dt", "N", "F0", "eps", "T_relax", "T_avg", "tone_sigma", "pump_sigma", "average")
 ring, cfg = make_ring(args.regime, 1, task["obs_scale"], seed=args.seed, squash=task["squash"], T_warmup=1.0,
-                      mini_comb="all", **{k: rc[k] for k in keys})       # read ALL lines here; the policy uses some
+                      mini_comb="all", **{k: rc[k] for k in keys if k in rc})       # read ALL lines here; the policy uses some
 lines, used = list(cfg["fine"]["lines"]), list(rc["fine"]["lines"])
 sel = [lines.index(n) for n in used]
 ring.a, ring.clock = c["ring_a"][:1].clone(), c["clock"]                # one lane of the trained lattice
 env = make_env(env_name)
 policy = LinearReadout(len(used), env.action_space.n)
 policy.load_state_dict(c["policy"])
-nx, ny, R = cfg["nx"], cfg["ny"], cfg["nx"] * cfg["ny"]
+nx, ny, R, zig = cfg["nx"], cfg["ny"], ring.solver.R, cfg["lattice"] == "zigzag"
 pump, drop = cfg["pump_site"], cfg["readout_sites"][0]
 lam, vec = np.linalg.eigh(ring.solver.H)
-boundary = edge_sites(nx, ny)
-on_edge = (np.abs(vec[boundary]) ** 2).sum(0) >= 0.85                    # the edge supermodes of H
+boundary = boundary_sites(ring.solver.H) if zig else edge_sites(nx, ny)
+on_edge = (np.abs(vec[boundary]) ** 2).sum(0) >= (0.6 if zig else 0.85)  # the edge supermodes of H (zigzag: one row deeper)
+if zig:                                                                  # ring positions: the odd rows are shifted by half a site
+    xy = zigzag_sites(nx, ny)
+    gx, gy = xy[:, 0] - 1 + 0.5 * (xy[:, 1] % 2), 0.6 * (xy[:, 1] - 1)
+else:
+    gx, gy = (np.arange(R) % nx).astype(float), (np.arange(R) // nx).astype(float)
+chaos = cfg["N"] > 1
 rungs = [0] + list(cfg["fine"]["rungs"])
-print(f"{args.tag}: {nx}x{ny} {cfg['lattice']} lattice, N = {cfg['N']}, pump sigma {cfg['pump_sigma']}, tones {cfg['tone_sigma']}, "
+print(f"{label}: {nx}x{ny} {cfg['lattice']} lattice, N = {cfg['N']}, pump sigma {cfg['pump_sigma']}, tones {cfg['tone_sigma']}, "
       f"policy reads lines {used[0]}..{used[-1]} ({len(used)}), update {c['update'] + 1}")
 
 # --------------------------------------------------------------------------------- greedy episode
 obs, _ = env.reset(seed=args.ep_seed)
-states, acts, powers, spec, share_mode, share_ring, ret, done = [], [], [], [], [], [], 0.0, False
+states, acts, powers, spec, share_mode, share_ring, share_m0, ret, done = [], [], [], [], [], [], [], 0.0, False
 with torch.no_grad():
-    while not done and len(states) < (500 if short == "CartPole" else 200):
+    while not done and len(states) < {"CartPole": 500, "Pendulum": 200, "LunarLander": 1000}[short]:
         feat = ring(obs[None, :])
         act = int(policy(feat[:, sel]).argmax(-1))
         a0 = ring.a[0, :, 0].numpy()                                     # all rings, the pump's longitudinal mode
@@ -71,20 +78,21 @@ with torch.no_grad():
         P = (ring.a[0].abs() ** 2).sum(-1).numpy()
         states.append(obs.copy()); acts.append(act); powers.append(P); spec.append(feat[0].numpy())
         share_mode.append(w[on_edge].sum() / w.sum()); share_ring.append(P[boundary].sum() / P.sum())
+        share_m0.append(float((ring.a[0, :, 0].abs() ** 2).sum() / (ring.a[0].abs() ** 2).sum()))
         obs, rew, term, trunc, _ = env.step(act)
         ret += rew
         done = term or trunc
 env.close()
 T = len(states)
 states, powers, spec = np.array(states), np.array(powers), np.array(spec)
-share_mode, share_ring = np.array(share_mode), np.array(share_ring)
+share_mode, share_ring, share_m0 = np.array(share_mode), np.array(share_ring), np.array(share_m0)
 print(f"episode: {T} steps, return {ret:.0f}; light in the edge supermodes {share_mode.mean():.1%}, on the boundary rings {share_ring.mean():.1%}")
 
 # ----------------------------------------------------------------------------------------- figure
 fig, ((ax_task, ax_lc, ax_lat), (ax_res, ax_spec, ax_share)) = plt.subplots(2, 3, figsize=(14.5, 7.6), gridspec_kw=dict(width_ratios=[1.1, 1.0, 1.0]))
 
 # training curve (static): the result file has the whole log and the frozen evaluation, the checkpoint the log up to its save
-res_file = f"results/ppo/{short}/mr_{args.regime}_{args.tag}_seed{args.seed}.json"
+res_file = f"results/ppo/{short}/{label}_seed{args.seed}.json"
 rlog = json.load(open(res_file)) if os.path.exists(res_file) else c["log"]
 lc_x = np.array([u["env_steps"] for u in rlog["updates"]]) / 1e3
 lc_y = np.array([u["mean_return"] for u in rlog["updates"]], dtype=float)
@@ -114,7 +122,8 @@ for n in rungs:
 ax_res.set_yscale("log"); ax_res.set_xlabel("frequency from the pump (half-linewidths)", fontsize=9)
 ax_res.set_ylabel("linear drop transmission", fontsize=9); ax_res.tick_params(labelsize=8)
 ax_res.set_title("drop spectrum of the mode and the drive lines", fontsize=10, pad=14)
-fig.suptitle(f"Mini-comb inside one longitudinal mode ({nx}×{ny} {cfg['lattice'].upper()} lattice) as the {short} policy",
+fig.suptitle((f"Chaotic comb ({cfg['N']} longitudinal modes, " if chaos else "Mini-comb inside one longitudinal mode (") +
+             f"{nx}×{ny} {cfg['lattice']} lattice) as the {short} policy",
              x=0.02, ha="left", fontsize=12, fontweight="semibold")
 
 arrow = [None]
@@ -124,6 +133,16 @@ if short == "CartPole":
     cart = Rectangle((0, 0.02), 0.44, 0.24, facecolor=ps.INK2, edgecolor="none", zorder=3)
     ax_task.add_patch(cart)
     pole, = ax_task.plot([], [], color=ps.ORANGE, lw=4, solid_capstyle="round", zorder=4)
+elif short == "LunarLander":                                # obs = (x, y, vx, vy, angle, ang. vel., leg L, leg R)
+    xr, yt = max(1.1, float(np.abs(states[:, 0]).max()) + 0.25), max(1.55, float(states[:, 1].max()) + 0.3)
+    ax_task.set_xlim(-xr, xr); ax_task.set_ylim(-0.12, yt); ax_task.set_aspect("equal"); ax_task.axis("off")
+    ax_task.plot([-xr + 0.05, xr - 0.05], [0, 0], color=ps.AXIS, lw=2, zorder=1)
+    ax_task.plot([-0.18, -0.18, 0.18, 0.18], [0.1, 0, 0, 0.1], color=ps.INK2, lw=1.2, zorder=2)      # the landing pad
+    trail, = ax_task.plot([], [], color=ps.GRID, lw=1.2, zorder=2)
+    body = Polygon(np.zeros((6, 2)), facecolor=ps.INK2, edgecolor="none", zorder=4)
+    flame = Polygon(np.zeros((3, 2)), facecolor=ps.ORANGE, edgecolor="none", zorder=3)
+    ax_task.add_patch(body); ax_task.add_patch(flame); flame.set_visible(False)
+    hull = 0.09 * np.array([[-1, -0.6], [-1, 0.5], [-0.45, 1.1], [0.45, 1.1], [1, 0.5], [1, -0.6]])
 else:                                                       # Pendulum: theta = 0 is upright, torque -2 / 0 / +2
     ax_task.set_xlim(-1.45, 1.45); ax_task.set_ylim(-1.3, 1.3); ax_task.set_aspect("equal"); ax_task.axis("off")
     ax_task.plot(0, 0, marker="o", ms=6, color=ps.INK2, zorder=4)
@@ -142,6 +161,17 @@ def draw_task(i):
         arrow[0] = ax_task.add_patch(FancyArrow(x, -0.22, 0.4 if acts[i] == 1 else -0.4, 0, width=0.045, head_width=0.14,
                                                 head_length=0.12, color=ps.BLUE, zorder=3))
         return f"action: {'right' if acts[i] else 'left'}"
+    if short == "LunarLander":                              # actions: nothing / left engine / main engine / right engine
+        x, y, _, _, th = states[i][:5]
+        Rm, pos, act = np.array([[np.cos(th), -np.sin(th)], [np.sin(th), np.cos(th)]]), np.array([x, y + 0.08]), acts[i]
+        body.set_xy(hull @ Rm.T + pos)
+        flame.set_visible(act != 0)
+        if act:
+            f = {2: [[-0.045, -0.06], [0.045, -0.06], [0, -0.22]], 1: [[-0.09, 0.03], [-0.09, 0.1], [-0.22, 0.065]],
+                 3: [[0.09, 0.03], [0.09, 0.1], [0.22, 0.065]]}[act]
+            flame.set_xy(np.array(f) @ Rm.T + pos)
+        trail.set_data(states[:i + 1, 0], states[:i + 1, 1] + 0.08)
+        return "action: " + ("coast", "left engine", "main engine", "right engine")[act]
     cth, sth, _ = states[i]
     x, y, tq = sth, cth, (-2.0, 0.0, 2.0)[acts[i]]
     rod.set_data([0, x], [0, y]); bob.set_data([x], [y])
@@ -153,15 +183,14 @@ ax_task.set_title("the task: greedy trained policy", fontsize=10)
 step_txt = ax_task.text(0.02, 0.97, "", transform=ax_task.transAxes, fontsize=9, color=ps.INK2, va="top")
 
 div_cmap = LinearSegmentedColormap.from_list("div", [ps.BLUE, ps.SURFACE, ps.RED])
-gx, gy = np.arange(R) % nx, np.arange(R) // nx
 dev = 100 * (powers / powers.mean(0) - 1.0)
 vmax = max(1e-6, np.percentile(np.abs(dev), 95))
 logP = np.log10(powers.mean(0) / powers.mean(0).max())
-size = (20 + (logP - logP.min()) / max(np.ptp(logP), 1e-9) * 150) * (8 / max(nx, ny)) ** 2 * 2.2
+size = (20 + (logP - logP.min()) / max(np.ptp(logP), 1e-9) * 150) * (64 / R) * 2.2
 dots = ax_lat.scatter(gx, gy, s=size, c=dev[0], cmap=div_cmap, norm=plt.Normalize(-vmax, vmax), edgecolors=ps.AXIS, linewidths=0.6, zorder=3)
 for site, tag in ((pump, "in"), (drop, "out")):
     ax_lat.annotate(tag, (gx[site], gy[site]), xytext=(0, -16 if gy[site] == 0 else 10), textcoords="offset points", ha="center", fontsize=8, color=ps.INK2)
-ax_lat.set_xlim(-0.8, nx - 0.2); ax_lat.set_ylim(-1.0, ny); ax_lat.set_aspect("equal"); ax_lat.axis("off")
+ax_lat.set_xlim(gx.min() - 0.8, gx.max() + 0.8); ax_lat.set_ylim(gy.min() - 1.0, gy.max() + 1.0); ax_lat.set_aspect("equal"); ax_lat.axis("off")
 ax_lat.set_title("size: power (log) · colour: dev.", fontsize=10)
 cb = fig.colorbar(dots, ax=ax_lat, fraction=0.045, pad=0.02, ticks=[-vmax, 0, vmax], format="%+.1f%%")
 cb.ax.tick_params(labelsize=7); cb.outline.set_visible(False)
@@ -180,8 +209,10 @@ ax_spec.set_title("fine lines at the drop ring (filled: read by the policy)", fo
 t = np.arange(T)
 ax_share.plot(t, 100 * share_mode, color=ps.BLUE, lw=1.6, label="in the edge supermodes")
 ax_share.plot(t, 100 * share_ring, color=ps.ORANGE, lw=1.6, label="on the boundary rings")
+if chaos:
+    ax_share.plot(t, 100 * share_m0, color=ps.RED, lw=1.6, label="in the pump's longitudinal mode")
 cursor = ax_share.axvline(0, color=ps.INK2, lw=1)
-ax_share.set_ylim(min(100 * share_mode.min(), 100 * share_ring.min()) - 2, 100.5)
+ax_share.set_ylim(min(100 * share_mode.min(), 100 * share_ring.min(), 100 * share_m0.min() if chaos else 100) - 2, 100.5)
 ax_share.set_xlabel("control step", fontsize=9); ax_share.set_ylabel("share of the light (%)", fontsize=9)
 ax_share.tick_params(labelsize=8); ax_share.legend(fontsize=8, frameon=False, loc="lower right")
 ax_share.set_title("where the light is", fontsize=10)

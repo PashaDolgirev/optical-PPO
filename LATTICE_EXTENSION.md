@@ -164,24 +164,40 @@ at n = −1) is not driven, and beyond n = +8 the lines fall between bulk superm
 
 64 lattices in parallel take 0.7 s per control step (2 s for 144 rings).
 
-## First results
+## Results
 
-Pendulum on the preset, one seed, frozen greedy evaluation over 64 episodes:
+Frozen greedy evaluation over 64 episodes, one seed each, pump below the comb threshold, one
+longitudinal mode per ring unless stated:
 
-| lines read | features | return | worst / best episode |
-|---|---|---|---|
-| `edge` | 4 | **−249 ± 175** | −638 / −2 |
-| `all` | 14 | −374 ± 469 | −1508 / −1 |
+| task, lattice | lines read | features | return | worst / best episode |
+|---|---|---|---|---|
+| Pendulum, AQH 4 × 4 | `edge` | 4 | **−249 ± 175** | −638 / −2 |
+| Pendulum, AQH 4 × 4 | `all` | 14 | −374 ± 469 | −1508 / −1 |
+| Pendulum, AQH 4 × 4, 64 modes per ring | `edge` | 4 | −257 ± 178 | −693 / −2 |
+| LunarLander, zigzag 6 × 6 | `edge` | 9 | **+263 ± 41** | +62 / +313 |
+| LunarLander, zigzag 6 × 6 | `all` | 66 | +224 ± 81 | −21 / +299 |
 
-For comparison: a linear policy reaches −718…−1038, the best single-ring regime −196…−252. So the
-mini-comb computes — the swing-up is out of reach of a linear readout of the inputs — and the four
-lines of the driven edge supermodes suffice; the ten further lines are 10⁻⁶ and below (three to four
-orders under the tone lines), and the policy that reads them fails outright in 9 of 64 episodes
-while doing better in the others (see the two questions below). Two cautions. This is one seed.
-And the four `edge` lines sit at the drive frequencies, so they contain the linearly transmitted
-tones as well as the mixing products: that they suffice does not by itself show where the
-computation happens. In the simulation 99.5 % of the light is in the four edge supermodes and 99.9 %
-on the boundary rings.
+For comparison (frozen evaluations of the single-ring part of this repository): on the pendulum a
+linear policy reaches −718…−1038 and the best single-ring regime −196…−252; on LunarLander the
+linear policy +7…+106 and the best single ring +255…+263 (solved means above 200). So the mini-comb
+computes — neither task is within reach of a linear readout of the inputs — and it does so at the
+level of the single ring, from one longitudinal mode, with as many read-out lines as there are
+drive lines. In the simulation of the pendulum 99.5 % of the light is in the four edge supermodes
+and 99.9 % on the boundary rings.
+
+**LunarLander on zigzag 6 × 6.** J = 40, dt = 0.0025, pump on σ = 26, tones on σ = 27…34, F₀² = 1000,
+ε = 1, T_relax = 2, T_avg = 3.5 (three periods of the mini-comb), 400 updates:
+
+```
+python PPO_MR.py --env LunarLander-v3 --regime topo --lattice zigzag --nx 6 --ny 6 --J 40 --dt 0.0025 \
+                 --pump_sigma 26 --F0 31.6228 --eps 1.0 --T_relax 2 --T_avg 3.5
+```
+
+The pump power has to be chosen against the comb threshold of this lattice, with all longitudinal
+modes simulated: at F₀² = 1600 a quarter to a third of the light leaves m = 0 (and a single-mode
+simulation, which cannot show it, is then wrong); at F₀² = 1000 nothing does, also with all eight
+tones at their largest amplitude 2ε = 2, while tones of amplitude 4 push it over the threshold.
+Hence F₀² = 1000 and ε = 1.
 
 ## Two questions the runs are meant to answer
 
@@ -191,13 +207,23 @@ In a 64-mode simulation of the preset, the power outside m = 0 is exactly zero a
 and the features computed with 1 and with 8 modes per ring agree to better than 1e−3 (test 7). The
 reason: pump and tones are all on m = 0, and four-wave mixing among them conserves m; the only way
 out is modulational instability, which the pump is kept below. So the single mode is not an
-approximation below threshold; it is what the dynamics does. (A full training with 64 modes per
-ring is running as a check; it will be added when it has finished.)
+approximation below threshold; it is what the dynamics does. The training confirms it (bottom
+right of the figure below): the Pendulum run repeated with 64 modes per ring follows the single-mode
+one — the two learning curves differ by 22 on average, within the scatter of such curves — and ends
+at −257 ± 178 against −249 ± 175, for six times the computing time (135 s per update against 23 s).
+
+Above the threshold this is no longer true. With the pump alone on the AQH 4 × 4 lattice, light
+appears on other longitudinal modes between F₀² = 100 and 150 (14 % of it at 150, 30–40 % at
+200–300, stationary rolls; time dependent from about 500). A simulation with one mode per ring
+stays stationary up to F₀² = 800 and starts to oscillate, on lines half a mini FSR apart, only at
+about 1600. So the comb that forms first is the one across longitudinal modes, an order of
+magnitude in pump power before a mini-comb would form by itself: the mini-comb has to be seeded by
+the tones, below threshold, and anything above threshold has to be simulated with all modes.
 
 **2. Must every line be read, or do the lines of the edge supermodes suffice?** `edge` reads the
 lines at the drive frequencies (solid in the figures above), `all` every line n δ in the band of H.
 
-![Which lines must be read](results/characterization/06_two_questions.png)
+![Which lines must be read, and how many longitudinal modes simulated](results/characterization/06_two_questions.png)
 
 (`characterization/06_two_questions.py` redraws the figure from the result files of finished runs.)
 
@@ -210,54 +236,20 @@ below the tone lines: after standardisation they give the readout more to fit an
 initial conditions, more to go wrong with. One seed each, so the ranking of the means is not
 settled; that four lines are enough to solve the task is.
 
+On LunarLander (zigzag 6 × 6, bottom left) the same holds: the nine edge lines give +263 ± 41, all
+66 lines +224 ± 81, and again the policy with more lines has the worse worst case (−21 against
++62). On this lattice the lines next to the driven ones are not empty (bottom middle): the tenth
+edge supermode at n = −1 and the lines beyond n = +8 carry 10⁻³ to 10⁻⁵ of the pump line, up to the
+level of the weakest tone line. They still do not help.
+
 What `edge` sufficing does and does not mean: the edge lines sit at the drive frequencies and
 contain the linearly transmitted tones as well as the mixing products. `--mini_comb bulk`, which
 reads only lines that four-wave mixing fills, is the control that separates the two; it has not
-been run yet. The same comparison on LunarLander (zigzag 6 × 6, 9 lines against 66) is running.
+been run yet. And every number here is one seed.
 
-`python animate_mini.py --env Pendulum-v1 --tag mini4_edge` replays one greedy episode from a
+`python animate_mini.py --env Pendulum-v1` (or `--env LunarLander-v3`; `--tag all` for the policy
+that reads all lines) replays one greedy episode from a
 training checkpoint: the task, the training curve, the lattice, the linear drop spectrum of the
 mode with the drive lines, the fine lines, and the share of the light on the edge
-(`results/ppo/Pendulum/topo_pendulum*.gif`).
+(`results/ppo/Pendulum/topo*_pendulum.gif`, `results/ppo/LunarLander/topo*_lunarlander.gif`).
 
-## Validation (`tests/test_lattice.py`)
-
-1. `H_IQH` / `H_AQH` / `H_zigzag` are Hermitian and match the explorer's builders **element by
-   element** (the test lifts the explorer's functions out of its source via `ast`; skipped if the
-   explorer repo is absent).
-2. Every propagator and drive-response matrix agrees with `torch.matrix_exp` to < 1e−12.
-3. A 1 × 1 lattice reproduces the validated single-ring `LLESolver` trajectory to **round-off zero**
-   over 500 chaotic steps.
-4. Chiral edge transport: a corner-driven 8 × 8 IQH lattice keeps ~87 % of the steady intensity on
-   the boundary rings, and the downstream corner receives ~7× the power of the mirror corner.
-5. Zigzag 6 × 6: ten consecutive edge supermodes within 11 % of equidistant; its default drop corner
-   receives 3× the power of the other.
-6. AQH: the default drop corner (0, ny−1) receives ~7× the power of the IQH corner (8 × 8, J = 10).
-7. Mini-comb: all-zero tone frequencies reproduce the time-independent drive to round-off; weak
-   tones inside the pump's mode ring up to the analytic linear response (< 1e−8), each with > 80 %
-   of its energy on the supermode it aims at; with the pump on, the integrator composes exactly
-   and stays second order in dt; `make_ring` fits the mini FSR and rounds it to the sample grid;
-   the features equal the Fourier components of the drop ring's field recomputed from a trace; a
-   held input repeats (< 1e−3); the other longitudinal modes stay empty and `N = 1` gives the same
-   features; `edge` and `bulk` are subsets of `all`; (state, clock) is the whole state of the
-   lattice; the preset picks the pump's and the tones' supermodes by itself, also on the zigzag
-   lattice; mistakes (the pump's supermode as a tone, supermodes far from equidistant, too few
-   edge supermodes for the inputs, indices out of range, field detection) are refused.
-
-`tests/test_ppo_clock.py` runs `PPO_MR.py` end to end (three tiny trainings in a temporary
-directory): `--pump_sigma`, `--tone_sigma`, `--mini_comb`, `--drop_site`, `--dt` and `--N` reach
-the lattice and the evaluation lattice, and the solver clock survives `calibrate()`, a checkpoint
-and `--resume`.
-
-The Benettin Lyapunov estimator in `microring/diagnostics.py` accepts lattice-shaped states (norm
-over everything but the batch axis); single-ring behaviour is unchanged.
-
-## What is not here (yet)
-
-* **More seeds and the `bulk` control** for the Pendulum result, and the operating points of the
-  larger lattices (pump power against the comb threshold).
-* **Past the comb threshold**: the lattice then fills other longitudinal modes and the response is
-  no longer periodic; the read-out above assumes it is.
-* **Disorder robustness** — the fabrication-motivated test (random on-site detunings, topological
-  vs trivial lattice at equal geometry). The solver supports it through the diagonal of H.
-* Superlattice and cylinder geometries of the explorer.

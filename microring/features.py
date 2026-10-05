@@ -145,9 +145,13 @@ class LatticeFeatureMap(_RingBase):
     def __init__(self, n_envs, obs_scale, H, fine, F0=10.0, eps=0.6, encoding="offset", squash="tanh", observable="intensity",
                  T_relax=3.0, T_avg=10.0, T_warmup=100.0, sample_dt=0.025,
                  N=1, dt=0.005, Delta=1.76, d2=0.0125, pump_site=0, drive_site=None, readout_sites=(0,), kex=1.0,
-                 dtype=torch.complex64, device="cpu", seed=0):
+                 average="field", dtype=torch.complex64, device="cpu", seed=0):
         assert observable == "intensity", "the fine lines are read as powers"
-        self.fine = fine
+        # average = "field": the Fourier component over the whole window (a periodic response, below the comb threshold);
+        # "power": the power in the band delta around every line, averaged over the periods of the window (a chaotic comb,
+        # whose lines are broad: there is no component at exactly n delta to pick out). The two agree for a periodic response.
+        assert average in ("field", "power")
+        self.fine, self.average = fine, average
         # one period = a whole number of solver steps (delta moves by less than 1 / steps) = a whole number of samples
         steps, s_max, need = 2 * np.pi / (fine["delta"] * dt), max(1, int(round(sample_dt / dt))), int(np.ptp(fine["lines"])) + 2
         P, self.sample_every = next(((P, s) for P in sorted(range(int(steps) - 2, int(steps) + 4), key=lambda P: abs(P - steps))
@@ -179,11 +183,16 @@ class LatticeFeatureMap(_RingBase):
         self.a, _ = self.solver.evolve(self.a, self.n_relax)
         n_samples, sites = self.n_avg // self.sample_every, list(self.readout_sites)
         c = torch.zeros(self.B, len(sites), len(self.fine_lines), dtype=torch.complex128)
-        for _ in range(n_samples):
+        P = torch.zeros(self.B, len(sites), len(self.fine_lines), dtype=torch.float64)
+        for i in range(n_samples):
             self.a, _ = self.solver.evolve(self.a, self.sample_every)
             phase = np.exp(1j * self.fine_delta * self.fine_lines * self.solver.t)      # line n rotates as exp(-i n delta t)
             c += self.a[:, sites, 0, None].to(torch.complex128) * torch.as_tensor(phase)
-        return ((c / n_samples).abs() ** 2).reshape(self.B, -1).float()
+            if self.average == "power" and (i + 1) % self.n_period == 0:                # one period: the band delta around line n
+                P += (c / self.n_period).abs() ** 2
+                c.zero_()
+        P = P / (n_samples // self.n_period) if self.average == "power" else (c / n_samples).abs() ** 2
+        return P.reshape(self.B, -1).float()
 
     @property
     def clock(self):

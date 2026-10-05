@@ -31,7 +31,11 @@ def curve(ax, r, color, label):
     x = np.array([u["env_steps"] for u in r["updates"]]) / 1e3
     y = np.array([u["mean_return"] for u in r["updates"]], dtype=float)
     ok = ~np.isnan(y)
-    ax.plot(x[ok], y[ok], color=color, lw=1.8, marker="o", ms=2.5, label=f"{label}:  frozen evaluation {r['eval']['mean']:.0f}")
+    if ok.sum() > 120:                                           # many noisy updates: the raw curve faint, a running mean on top
+        ax.plot(x[ok], y[ok], color=color, lw=0.6, alpha=0.3)
+        ax.plot(x[ok][7:-7], np.convolve(y[ok], np.ones(15) / 15, mode="valid"), color=color, lw=1.8, label=f"{label}:  frozen evaluation {r['eval']['mean']:.0f}")
+    else:
+        ax.plot(x[ok], y[ok], color=color, lw=1.8, marker="o", ms=2.5, label=f"{label}:  frozen evaluation {r['eval']['mean']:.0f}")
     ax.plot([x[ok][-1]], [r["eval"]["mean"]], marker="D", ms=7, color=color, ls="", markeredgecolor="white")
     ax.set_xlabel("env steps (thousands)", fontsize=9); ax.set_ylabel("mean return of the episodes finished in the update", fontsize=9)
     ax.legend(fontsize=8, frameon=False, loc="lower right")
@@ -57,7 +61,7 @@ def lines(ax, r, title):
 
 
 e, a = load("Pendulum", "mr_topo"), load("Pendulum", "mr_topo_all")
-le, la, m64 = load("LunarLander", "mr_topo_zz6_edge"), load("LunarLander", "mr_topo_zz6_all"), load("Pendulum", "mr_topo_N64")
+le, la, m64 = load("LunarLander", "mr_topo"), load("LunarLander", "mr_topo_all"), load("Pendulum", "mr_topo_N64")
 rows = [("pendulum", True), ("lunar", bool(le and la)), ("modes", bool(m64))]
 n_rows = 1 + (rows[1][1] or rows[2][1])
 fig, ax = plt.subplots(n_rows, 3, figsize=(15.5, 4.4 * n_rows), squeeze=False)

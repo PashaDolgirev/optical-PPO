@@ -244,6 +244,9 @@ assert ((c / fm.n_avg).abs() ** 2 / ref - 1).abs().max() < 1e-3
 fm.a, fm.clock = a_s.clone(), t_s                            # (a, clock) is the whole state of the lattice: the symbol repeats from it
 assert (fm(obs) - ref).abs().max() < 1e-7
 #     "all" reads every line in the band of H, "bulk" all but the driven ones; the driven lines are the same numbers
+fmP, _ = mk(average="power")                                # band powers per period: the same numbers for a periodic response
+fmP(obs)
+assert (fmP(obs) / F[-1] - 1).abs().max() < 1e-3
 fmA, cfgA = mk(mini_comb="all")
 fmB, cfgB = mk(mini_comb="bulk")
 allL, bulkL = cfgA["fine"]["lines"], cfgB["fine"]["lines"]

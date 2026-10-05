@@ -158,9 +158,10 @@ simulated with one mode per ring (`N = 1`). The integrator is the same exact-flo
 with a matrix exponential from one eigendecomposition of H − iκ_ex for the linear + drive sub-flow.
 
 On the AQH 4 × 4 lattice (four edge supermodes: the pump and the three inputs of the pendulum) this
-solves the Pendulum swing-up to −249 from four features (one seed; linear policy −718…−1038, best
-single ring −196…−252). Tasks with more inputs need more edge supermodes: the zigzag lattice has
-ten nearly equidistant ones at 6 × 6.
+solves the Pendulum swing-up to −249 from four features (linear policy −718…−1038, best single
+ring −196…−252). Tasks with more inputs need more edge supermodes: the zigzag lattice has ten
+nearly equidistant ones at 6 × 6, and lands the LunarLander at +263 from nine features (linear
+policy +7…+106, best single ring +255…+263). One seed each.
 
     python PPO_MR.py --env Pendulum-v1 --policy mr --regime topo --seed 0
 

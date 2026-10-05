@@ -259,7 +259,7 @@ def main():
     p.add_argument("--ent_coef", type=float, default=None)
     p.add_argument("--reward_scale", type=float, default=None)
     # microring
-    p.add_argument("--regime", choices=["chaos", "normal", "rolls", "soliton", "topo"], default="chaos")
+    p.add_argument("--regime", choices=["chaos", "normal", "rolls", "soliton", "topo", "topo_chaos"], default="chaos")
     p.add_argument("--observable", choices=["intensity", "field", "both"], default="intensity")
     p.add_argument("--eps", type=float, default=None, help="sub-band amplitude at s~ = 0 (default: the regime's preset)")
     p.add_argument("--T_relax", type=float, default=None, help="chaos and topo only: time the drive is held before averaging (lifetimes)")
